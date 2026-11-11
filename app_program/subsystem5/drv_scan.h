@@ -8,8 +8,8 @@
 #define DRV_SCAN_H
 
 #define PIN_SERVO	15
-#define PIN_US_TRIG	17
-#define PIN_US_ECHO	16
+#define PIN_US_TRIG	16
+#define PIN_US_ECHO	17
 
 void	servo_init(void);
 void	servo_set_deg(int deg);		/* -90 .. +90, + = left, 0 = straight ahead */

@@ -69,16 +69,19 @@ static void bypass_step(vc_t *v, vc_out_t *o, int i)
 	}
 }
 
-/* a junction with a barcode command waiting: STRAIGHT drives on, the others drive to the junction centre and turn */
+/* A junction: stop, pause VC_JUNCTION_PAUSE_MS, then do the remembered barcode command (drive to the junction centre
+   and turn), or drive straight on when there is none. */
 static void junction_action(vc_t *v, vc_out_t *o, uint32_t now)
 {
+	v->junction_cmd = v->nav_has ? v->nav_cmd : -1;
 	v->nav_has = false;
-	if (v->nav_cmd == NAV_STRAIGHT)
-		return;
-	manoeuvre(v, o, MOTION_CMD_MOVE, 0, VC_JUNCTION_ADVANCE_MM);
+	if (v->junction_cmd < 0 && !VC_JUNCTION_PAUSE_ALWAYS)
+		return;					/* no barcode waiting: just carry on */
+	cmd(o, MOTION_CMD_STOP, 0, 0, 0);
 	enter(v, o, VC_BARCODE_ACTION, now);
-	v->settle = VC_SETTLE_TICKS;
-	v->sub = 0;
+	v->sub = 0;					/* 0 = pausing */
+	v->t_sub = now;
+	v->settle = 0;
 }
 
 void vc_step(vc_t *v, const vc_in_t *in, vc_out_t *o)
@@ -159,7 +162,7 @@ void vc_step(vc_t *v, const vc_in_t *in, vc_out_t *o)
 		}
 		if (v->nav_has && VC_NAV_EXPIRE_MS > 0 && now - v->t_nav > VC_NAV_EXPIRE_MS)
 			v->nav_has = false;
-		if (in->line && in->line->type == LINE_EVT_JUNCTION && v->nav_has)
+		if (in->line && in->line->type == LINE_EVT_JUNCTION)
 			junction_action(v, o, now);
 #endif
 		break;						/* otherwise keep creeping along the line */
@@ -182,8 +185,8 @@ void vc_step(vc_t *v, const vc_in_t *in, vc_out_t *o)
 			o->scan_request = true;
 			v->sub = 0;
 			enter(v, o, VC_OBSTACLE_AVOID, now);
-		} else if (in->line && in->line->type == LINE_EVT_JUNCTION && v->nav_has) {
-			junction_action(v, o, now);		/* LEFT / RIGHT / UTURN: advance to the centre, then turn */
+		} else if (in->line && in->line->type == LINE_EVT_JUNCTION && (v->nav_has || VC_JUNCTION_PAUSE_ALWAYS)) {
+			junction_action(v, o, now);		/* stop, pause, then the barcode command */
 		} else if (in->line && in->line->type == LINE_EVT_LOST) {
 			go(v, o, VC_RECOVER_SPEED);
 			enter(v, o, VC_RECOVER, now);
@@ -194,16 +197,29 @@ void vc_step(vc_t *v, const vc_in_t *in, vc_out_t *o)
 		break;
 
 	case VC_BARCODE_ACTION:
+		if (v->sub == 0) {				/* PAUSE at the junction */
+			if (now - v->t_sub < VC_JUNCTION_PAUSE_MS) break;
+			if (v->junction_cmd < 0 || v->junction_cmd == NAV_STRAIGHT) {
+				go(v, o, VC_CRUISE_SPEED);	/* straight on */
+				enter(v, o, VC_LINE_FOLLOW, now);
+			} else {				/* drive to the junction centre first */
+				manoeuvre(v, o, MOTION_CMD_MOVE, 0, VC_JUNCTION_ADVANCE_MM);
+				v->settle = VC_SETTLE_TICKS;
+				v->sub = 1;
+			}
+			break;
+		}
 		if (v->settle > 0) { v->settle--; break; }
 		if (in->motion_done) {
-			if (v->sub == 0) {			/* reached the junction centre: now make the turn */
-				v->sub = 1;
-				switch (v->nav_cmd) {
+			if (v->sub == 1) {			/* at the junction centre: now make the turn */
+				v->sub = 2;
+				switch (v->junction_cmd) {
 				case NAV_LEFT:	manoeuvre(v, o, MOTION_CMD_TURN, +VC_TURN_ANGLE, 0); break;
 				case NAV_RIGHT:	manoeuvre(v, o, MOTION_CMD_TURN, -VC_TURN_ANGLE, 0); break;
 				default:	manoeuvre(v, o, MOTION_CMD_UTURN, 0, 0); break;
 				}
-			} else {
+				v->settle = VC_SETTLE_TICKS;
+			} else {				/* turned: follow the line again */
 				go(v, o, VC_CRUISE_SPEED);
 				enter(v, o, VC_LINE_FOLLOW, now);
 			}

@@ -15,7 +15,9 @@ typedef struct {
 	uint32_t	t_start;			/* when that element started */
 	int		n;				/* completed elements */
 	uint32_t	w[BAR_MAX_ELEMENTS];		/* their widths, us: bar, space, bar, ... */
-	uint32_t	widest;
+	int16_t		pk[BAR_MAX_ELEMENTS];		/* their peak reading (darkest for a bar), -1 = unknown */
+	uint32_t	widest;				/* widest black bar so far */
+	int		tried_n;			/* element count of the last early decode attempt */
 } bd_t;
 
 typedef struct {
@@ -30,13 +32,15 @@ typedef struct {
 typedef enum { BD_NONE, BD_VALID, BD_INVALID } bd_result_t;
 
 void		bd_init(bd_t *b);
-/* feed one edge; `black` = level after the edge. Never completes a read (the quiet zone after the code does). */
-void		bd_edge(bd_t *b, uint32_t t_us, bool black);
+/* feed one edge; `black` = level after the edge, `peak` = darkest (bar) / lightest (space) reading of the stripe that
+   just ended, or -1 if unknown. Never completes a read (the quiet zone after the code does). */
+void		bd_edge_p(bd_t *b, uint32_t t_us, bool black, int peak);
+void		bd_edge(bd_t *b, uint32_t t_us, bool black);		/* same, peak unknown */
 /* call every ~1 ms: when the white after a code has lasted long enough, decodes it into *out.
    BD_VALID = a Code 39 code was read, BD_INVALID = something was read but did not decode (out->pattern says what). */
 bd_result_t	bd_poll(bd_t *b, uint32_t now_us, bd_read_t *out);
 
-/* decode a finished list of element widths (exposed for tests) */
-bd_result_t	bd_decode(const uint32_t *w, int n, bd_read_t *out);
+/* decode a finished list of element widths and peaks (pk may be NULL) (exposed for tests) */
+bd_result_t	bd_decode(const uint32_t *w, const int16_t *pk, int n, bd_read_t *out);
 
 #endif

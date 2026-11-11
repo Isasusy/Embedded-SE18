@@ -46,6 +46,7 @@ File: `config/config_device.h`
 | subsystem5/vc_config.h | S5_SERVO_TEST, S5_ULTRA_PRINT | 0, 1 | 0, 0 |
 | subsystem3/line_config.h | LINE_STEER_GAIN / LINE_STEER_MIN / LINE_STEER_HOLD_MS | 240 / 110 / 200 (stronger steering on curves) | keep, tune on the track |
 | subsystem2/motion_config.h | MC_STALL_CYCLES / MC_STALL_MIN_TGT | 100 (1 s) / 30 mm/s (fewer false stall faults) | keep |
+| subsystem5/vc_config.h | VC_JUNCTION_PAUSE_MS / VC_JUNCTION_PAUSE_ALWAYS | 1000 / 1 (stop at every junction, then act) | keep or set ALWAYS 0 |
 | subsystem5/vc_config.h | VC_BENCH_BARCODES | 1 (bench still turns at a junction after a barcode) | (bench only) |
 | subsystem3/line_config.h | BAR_ADC_THRESH / BAR_ADC_HYST | 1000 / 150 (GP28 read by the ADC) | tune from the `barcode=` readings |
 | subsystem5/vc_config.h | VC_BENCH_RETRY_MS | 1500 (bench: reset and drive on after a stall) | (bench only) |

@@ -26,6 +26,9 @@
 #define VC_RECOVER_SPEED	60		/* mm/s while searching for a lost line   */
 #define VC_TURN_ANGLE		90		/* degrees for a LEFT / RIGHT barcode     */
 #define VC_JUNCTION_ADVANCE_MM	60		/* after the sensors see a junction, drive this far (axle to the junction centre) before turning (CALIBRATE) */
+#define VC_JUNCTION_PAUSE_MS	1000		/* at a junction: stop this long before acting on the barcode */
+#define VC_JUNCTION_PAUSE_ALWAYS 1		/* 1 = also stop at junctions with no barcode waiting (shows that the junction
+						   was seen; then drives straight on). 0 = only when a barcode is waiting */
 #define VC_NAV_EXPIRE_MS	15000		/* a barcode command is dropped if no junction comes within this time (0 = never) */
 #define VC_SELFTEST_MS		4000		/* INIT: all subsystems must report READY in this time */
 #define VC_ALIVE_MS		100		/* NFR10: a task silent longer than this = fault */
@@ -61,7 +64,7 @@
 #define SCAN_PERIOD_MS		60		/* ping period while WATCHing (task table: 60 ms per ping) */
 #define SCAN_CLOSE_MM		200		/* WATCH: closer than this twice in a row = obstacle close = STOP (adjust) */
 #define SCAN_WATCH_DEG		0		/* centre of the watch sweep: 0 = straight ahead, + = left (adjust) */
-#define SCAN_WATCH_SWEEP_DEG	40		/* WATCH: the servo sweeps continuously from centre-this to centre+this (0 = fixed, no sweep) */
+#define SCAN_WATCH_SWEEP_DEG	30		/* WATCH: the servo sweeps continuously from centre-this to centre+this (0 = fixed, no sweep) */
 #define SCAN_WATCH_STEP_DEG	5		/* ... in steps of this many degrees */
 #define SCAN_WATCH_SETTLE_MS	45		/* ... waiting this long for the servo at each step before pinging */
 #define SCAN_PATH_HALF_W_MM	120		/* an echo only counts as an obstacle if it is within this sideways distance of the path */

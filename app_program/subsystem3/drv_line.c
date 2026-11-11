@@ -96,22 +96,35 @@ bool barcode_is_black(void) { return s_last == 1; }
 
 void barcode_sample(void)
 {
+	static int ext;				/* lowest reading while white, highest while black, since the last change */
 	uint32_t t = S3_US32();
-	int v = adc_ch(2);			/* GP28 = ADC2 */
+	int v = (adc_ch(2) + adc_ch(2)) / 2;	/* GP28 = ADC2; two conversions averaged against noise */
 	s_raw = v;
 #if !BARCODE_BLACK_IS_HIGH
 	v = 4095 - v;				/* make "black" the high side */
 #endif
-	int level;
-	if (s_last == 1)      level = (v < BAR_ADC_THRESH - BAR_ADC_HYST) ? 0 : 1;	/* hysteresis: no chatter at the edge */
-	else                  level = (v > BAR_ADC_THRESH + BAR_ADC_HYST) ? 1 : 0;
+	if (s_last < 0) { s_last = (v > BAR_ADC_THRESH) ? 1 : 0; ext = v; return; }
 
-	if (s_last < 0) { s_last = level; return; }
+	int level = s_last;
+	if (s_last == 0) {			/* white: follow the minimum, turn black on a rise of BAR_SWING */
+		if (v < ext) ext = v;
+		if (v > ext + BAR_SWING) level = 1;
+	} else {				/* black: follow the maximum, turn white on a fall of BAR_SWING */
+		if (v > ext) ext = v;
+		if (v < ext - BAR_SWING) level = 0;
+	}
 	if (level == s_last) return;
+
+	int peak = ext;				/* the extreme of the stripe that just ended */
 	s_last = level;
+	ext = v;
 	if (s_head - s_tail >= RING) { s_over++; return; }
 	s_ring[s_head % RING].t_us  = t;
 	s_ring[s_head % RING].black = (level == 1);
+#if !BARCODE_BLACK_IS_HIGH
+	peak = 4095 - peak;
+#endif
+	s_ring[s_head % RING].peak  = peak;
 	s_head++;
 }
 

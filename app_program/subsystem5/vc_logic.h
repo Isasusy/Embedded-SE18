@@ -27,6 +27,7 @@ typedef struct {
 	bool		bench_restart;			/* bench: drive on again after an automatic reset */
 	bool		nav_has;			/* a barcode command is waiting for the next junction */
 	int		nav_cmd;			/* nav_cmd_type_t of that command */
+	int		junction_cmd;			/* what this junction does: nav_cmd_type_t, or -1 = straight on */
 	uint32_t	t_nav;
 	uint32_t	t_sub;
 } vc_t;

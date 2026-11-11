@@ -23,6 +23,10 @@ volatile char s3_last_pattern[BAR_MAX_ELEMENTS + 12];
 volatile int s3_last_nav;			/* nav_cmd_type_t or -1 */
 volatile unsigned s3_barcode_count;
 
+/* for line_task: is the barcode sensor in the middle of a code (then a "junction" is really the bars)? */
+volatile bool s3_bar_active;
+volatile uint32_t s3_bar_last_edge_ms;
+
 static void keep(const bd_read_t *rd, bool ok)
 {
 	for (int i = 0; i < 8; i++) s3_last_barcode[i] = ok ? rd->text[i] : 0;
@@ -34,8 +38,8 @@ static void keep(const bd_read_t *rd, bool ok)
 
 void barcode_task(INT stacd, void *exinf)
 {
-	bd_t b;
-	bd_read_t rd;
+	static bd_t b;					/* static: keeps the task stack small */
+	static bd_read_t rd;
 	bar_edge_t e;
 	(void)stacd; (void)exinf;
 
@@ -44,8 +48,20 @@ void barcode_task(INT stacd, void *exinf)
 
 	for (;;) {
 		barcode_sample();
-		while (barcode_edge_pop(&e))
-			bd_edge(&b, e.t_us, e.black);
+		while (barcode_edge_pop(&e)) {
+#if S3_BARCODE_TRACE
+			static uint32_t prev_us;
+			static unsigned lines, sec;
+			if (s3_now_ms() / 1000u != sec) { sec = s3_now_ms() / 1000u; lines = 0; }
+			if (prev_us && ++lines <= 40)		/* at most 40 lines a second */
+				S3_PRINTF("[S3] bar: %s %d ms (adc %d)\n", e.black ? "white" : "BLACK",
+					  (int)((e.t_us - prev_us) / 1000u), e.peak);
+			prev_us = e.t_us;
+#endif
+			bd_edge_p(&b, e.t_us, e.black, e.peak);
+			s3_bar_last_edge_ms = s3_now_ms();
+		}
+		s3_bar_active = b.active;
 
 		bd_result_t r = bd_poll(&b, S3_US32(), &rd);
 		if (r == BD_VALID) {

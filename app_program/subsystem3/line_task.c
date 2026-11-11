@@ -20,21 +20,27 @@ static void period_wait(void)
 	tk_dly_tsk(ms ? ms : 1);
 }
 
+IMPORT volatile bool	s3_bar_active;		/* barcode_task.c */
+IMPORT volatile uint32_t s3_bar_last_edge_ms;
+
 static void send_evt(la_event_t e)
 {
 	static const int map[] = { 0, LINE_EVT_JUNCTION, LINE_EVT_LOST, LINE_EVT_FOUND };
-#if S3_DEBUG_PRINT
 	static const char *const nm[] = { "", "JUNCTION", "LINE_LOST", "LINE_FOUND" };
-#endif
 	line_evt_t ev = { map[e], s3_now_ms() };
 
-	if (mbf_line_evt > 0) {
-		tk_snd_mbf(mbf_line_evt, &ev, sizeof ev, TMO_POL);	/* never blocks; a full buffer drops it */
-	} else {
-#if S3_DEBUG_PRINT
+	if (e == LA_JUNCTION) {
+		uint32_t since = s3_now_ms() - s3_bar_last_edge_ms;
+		if (s3_bar_active || since < BAR_JUNCTION_BLANK_MS) {	/* both sensors on a barcode bar, not a junction */
+			S3_PRINTF("[S3] both line sensors black during a barcode: not a junction\n");
+			return;
+		}
+		S3_PRINTF("[S3] >> JUNCTION (both line sensors black)\n");
+	} else if (e == LA_LINE_LOST) {		/* LINE_FOUND is too frequent with the outside-the-line sensors to print */
 		S3_PRINTF("[S3] >> %s\n", nm[e]);
-#endif
 	}
+	if (mbf_line_evt > 0)
+		tk_snd_mbf(mbf_line_evt, &ev, sizeof ev, TMO_POL);	/* never blocks; a full buffer drops it */
 }
 
 void line_task(INT stacd, void *exinf)

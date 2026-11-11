@@ -46,13 +46,28 @@
  * Every read is printed:  [S3] >> BARCODE "A" -> LEFT   and the raw wide/narrow pattern, also when it fails.
  * Command letters (briefing): A = turn left, B = turn right, C = go straight, D = U-turn. */
 #define BAR_MIN_US		3000		/* an element shorter than this is a glitch and is merged away (GP28 polled every 1 ms) */
-#define BAR_MAX_US		400000		/* a bar longer than this is not a barcode (the line, a junction): read dropped */
-#define BAR_END_FACTOR		4		/* the read ends when white lasts this many times the widest element ... */
+/* No barcode SIZE is assumed anywhere: every decision compares stripes with each other (Code 39: wide = 2-3 x narrow),
+   so any print size and any speed work. Only these two absolute limits remain, and they are far beyond any bar: */
+#define BAR_MAX_US		2000000		/* a DARK stripe longer than this (180 mm at 90 mm/s) is the line or a junction */
+#define BAR_MAX_WEAK_US		3000000		/* any black longer than this: read dropped */
+#define BAR_LINE_PEAK		1400		/* "dark" = the stripe's peak reading is at least this (thick bars and the line ~2300+) */
+#define BAR_DIP_MIN		1000		/* a "white" that never got lighter than this is only a dip inside one dark bar */
+#define BAR_PEAK_SPLIT		600		/* thin and thick bars are told apart by how dark they get (thin ~300, thick ~2400)
+						   when the darkest and lightest bar differ by at least this much */
+#define BAR_END_FACTOR		4		/* the read ends when white lasts this many times the widest BLACK bar ... */
 #define BAR_END_MIN_US		150000		/* ... and at least this long */
 #define BAR_MAX_ELEMENTS	64		/* up to 6 characters including '*' and '*' */
 #define BARCODE_BLACK_IS_HIGH	1		/* 1 = GP28 reads HIGHER over black (like the line sensors); 0 = lower */
-#define BAR_ADC_THRESH		1000		/* GP28 is read by the ADC (0..4095): black/white split ...         */
-#define BAR_ADC_HYST		150		/* ... with this much hysteresis either side (white ~200, black ~2000) */
+#define BAR_ADC_THRESH		700		/* only for the very first sample: is the sensor on black or white?    */
+/* The course barcode is Code 39 "*X*", 141 mm long: narrow = 3 mm, wide = 9 mm. The IR spot is wider than 3 mm,
+   so a narrow bar or gap never reaches full black or full white. Instead of a fixed threshold the reading is
+   followed like a peak detector: BLACK starts when it rises BAR_SWING above the lowest value since the last
+   change, WHITE starts when it falls BAR_SWING below the highest. Small blurred swings still count. */
+#define BAR_SWING		70 		/* ADC counts; raise if the stripe trace shows noise, lower if bars are missed */
+
+#define BAR_JUNCTION_BLANK_MS	800		/* a "junction" (both line sensors black) while a barcode is being read, or this
+						   soon after its last stripe, is the barcode's own bars: it is ignored */
+#define S3_BARCODE_TRACE	1		/* 1 = print every stripe the barcode sensor sees (colour and ms); 0 later */
 
 #define BAR_CHAR_LEFT		'A'
 #define BAR_CHAR_RIGHT		'B'
