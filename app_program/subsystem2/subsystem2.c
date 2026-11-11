@@ -1,45 +1,58 @@
 /*
  *	subsystem2.c
- *	Subsystem 2 -- Producer: creates its objects and starts its task.
+ *	Subsystem 2 -- Motion Control: creates its objects and starts its task.
  *
- *	APIs shown: tk_cre_sem, tk_cre_mpf
+ *	APIs shown: tk_cre_mbf, tk_cre_flg, tk_cre_mtx
  */
 
 #include "subsystem2.h"
 
-EXPORT ID	sem_slots;	/* IF-02, see subsystem2.h */
-EXPORT ID	mpf_samples;
+EXPORT ID		mbf_motion_cmd;		/* IF-09 */
+EXPORT ID		flg_motion;		/* IF-10 */
+EXPORT ID		mtx_motion;		/* IF-08 */
+EXPORT motion_status_t	app_motion;
+EXPORT MOTION_DEBUG	s2_motion_debug;
+
+/* IF-11 is owned by Line Follow. Weak defaults (0) so S2 links and runs alone; the real strong
+   definitions replace them at link time. While mtx_line is 0, Motion Control just holds its heading. */
+__attribute__((weak)) ID		mtx_line;
+__attribute__((weak)) line_status_t	app_line;
 
 EXPORT ER subsystem2_init(void)
 {
-	T_CSEM	csem = {0};
-	T_CMPF	cmpf = {0};
+	T_CMBF	cmbf = {0};
+	T_CFLG	cflg = {0};
+	T_CMTX	cmtx = {0};
 
-	/* Semaphore: a counter of free "slots".  The producer takes one
-	   (tk_wai_sem) before each sample; the consumer gives one back
-	   (tk_sig_sem).  It never exceeds the number of memory blocks, so
-	   the producer can never run out of memory. */
-	csem.sematr  = TA_TFIFO;	/* waiting tasks queue in FIFO order */
-	csem.isemcnt = S2_POOL_COUNT;	/* initial count */
-	csem.maxsem  = S2_POOL_COUNT;	/* maximum count */
-	sem_slots = tk_cre_sem(&csem);
-	if (sem_slots < E_OK) {
-		return sem_slots;
+	/* Message buffer: commands from the Vehicle Controller, FIFO, depth 4. */
+	cmbf.mbfatr = TA_TFIFO;
+	cmbf.bufsz  = S2_CMD_BUFSZ;
+	cmbf.maxmsz = S2_CMD_MAXMSZ;
+	mbf_motion_cmd = tk_cre_mbf(&cmbf);
+	if (mbf_motion_cmd < E_OK) {
+		return mbf_motion_cmd;
 	}
 
-	/* Fixed-size memory pool: S2_POOL_COUNT blocks, each exactly one
-	   SAMPLE_MSG.  Faster and more predictable than malloc(). */
-	cmpf.mpfatr = TA_TFIFO | TA_RNG3;
-	cmpf.mpfcnt = S2_POOL_COUNT;		/* number of blocks */
-	cmpf.blfsz  = sizeof(SAMPLE_MSG);	/* size of one block */
-	mpf_samples = tk_cre_mpf(&cmpf);
-	return (mpf_samples < E_OK) ? mpf_samples : E_OK;
+	/* Event flag: STOP / RESET come from the VC, READY / ALIVE / FAULT from us. Several tasks may touch it. */
+	cflg.flgatr  = TA_TFIFO | TA_WMUL;
+	cflg.iflgptn = 0;
+	flg_motion = tk_cre_flg(&cflg);
+	if (flg_motion < E_OK) {
+		return flg_motion;
+	}
+
+	/* Mutex around app_motion. Priority inheritance so a low-priority reader (the IMU) cannot
+	   hold up the 10 ms control loop. */
+	cmtx.mtxatr = TA_INHERIT;
+	mtx_motion = tk_cre_mtx(&cmtx);
+	return (mtx_motion < E_OK) ? mtx_motion : E_OK;
 }
 
 EXPORT ER subsystem2_start(void)
 {
-	/* Pinned to core 1 (TP_PRC2): samples cross to subsystem 3 on core 0 */
-	ID tid = app_start_task(producer_task, S2_PRI_PRODUCER, TP_PRC2,
-				"producer_task");
+	/* Both tasks pinned to core 0 (TP_PRC1) so counting and control never cross cores. */
+	ID tid = app_start_task(enc_task, S2_PRI_ENC, TP_PRC1, "enc_task");
+	if (tid < E_OK) return tid;
+	tid = app_start_task(motion_task, S2_PRI_MOTION, TP_PRC1, "motion_task");
 	return (tid < E_OK) ? tid : E_OK;
 }
