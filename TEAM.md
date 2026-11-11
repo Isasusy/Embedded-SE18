@@ -68,7 +68,7 @@ fixed.
 | GP17 | | |
 | GP18 | | |
 | GP19 | *example:* S1 | external LED (LED + 330 Ω to GND) |
-| GP20 | | |
+| GP20 | 5 | START button: one side to GP20, other to GND, internal pull-up (active low). Read by `vc_task` |
 | GP21 | | |
 | GP22 | | |
 | GP26 | | (ADC0 capable) |
@@ -111,6 +111,7 @@ the drivers have no locking to stop it.
 | SPI0 | | | |
 | SPI1 | | | |
 | ADC | | | GP26–GP28 |
+| GPIO input (START button) | 5 | `vc_task` (polled every 20 ms, no interrupt) | GP20 |
 | PWM slices (list) | | | |
 | WiFi radio, TCP/IP, MQTT | *kernel* | `cyw43_utk_task` (built in) | GP23–25, GP29 |
 

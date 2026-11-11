@@ -1,6 +1,7 @@
 /*
  *	vc_task.c -- Vehicle Controller: mission state machine, fault handling, command arbitration, watchdog supervision.
- *	Periodic 20 ms. It owns NO hardware except the watchdog feed; every motor command goes to Motion Control (S2).
+ *	Periodic 20 ms. It owns NO output hardware -- every motor command goes to Motion Control (S2); from the outside
+ *	world it only reads the GP20 START button (drv_button.c) and feeds the watchdog.
  *
  *	APIs shown: tk_rcv_mbf, tk_snd_mbf, tk_set_flg, tk_clr_flg, tk_wai_flg (polling, with TWF_BITCLR), tk_loc_mtx
  *	Every call to another subsystem's object uses TMO_POL: the controller never blocks.
@@ -11,6 +12,7 @@
 #include "../subsystem4/subsystem4.h"		/* flg_imu */
 #include "vc_logic.h"
 #include "vc_config.h"
+#include "drv_button.h"
 #include "s5_port.h"
 #if VC_WATCHDOG_ENABLE
 #endif
@@ -49,6 +51,16 @@ void vc_task(INT stacd, void *exinf)
 	(void)stacd; (void)exinf;
 
 	vc_init(&v);
+	/* Power-up is a STOP state.  Motion Control starts stopped by itself (motor_off() in
+	   motion_task), and this STOP makes it explicit before the first control tick: the wheels
+	   cannot turn until a START arrives. */
+	{
+		const motion_cmd_t stop0 = { MOTION_CMD_STOP, 0, 0, 0 };
+		tk_snd_mbf(mbf_motion_cmd, &stop0, sizeof stop0, TMO_POL);
+	}
+#if VC_START_BTN && S5_DEBUG_PRINT
+	S5_PRINTF("[S5] power-up in STOP (IDLE): press GP20 to start\n");
+#endif
 #if VC_WATCHDOG_ENABLE
 	s5_wdt_enable(VC_WATCHDOG_MS);	/* NFR10: Pico resets (motor pins fall low) if we stop feeding it */
 #endif
@@ -62,6 +74,19 @@ void vc_task(INT stacd, void *exinf)
 		in.line   = RECV(mbf_line_evt, line);
 		in.imu    = RECV(mbf_imu_evt, imu);
 		in.obst   = RECV(mbf_obstacle, obst);
+#if VC_START_BTN
+		/* GP20 START button -- gives the car the same remote_cmd_t an MQTT command would.
+		   IDLE: start the run.  FAULT / COMPLETE: reset first (back to the stopped IDLE state), so
+		   a press never jumps out of a fault straight into driving; the next press starts.
+		   In any other state a press is ignored (a run is not stopped by brushing the button). */
+		if (button_pressed()) {
+			remote.cmd = (v.state == VC_FAULT || v.state == VC_COMPLETE) ? REMOTE_RESET : REMOTE_START;
+			in.remote  = &remote;
+#if S5_DEBUG_PRINT
+			S5_PRINTF("[S5] GP20 pressed -> %s\n", (remote.cmd == REMOTE_RESET) ? "RESET" : "START");
+#endif
+		}
+#endif
 #if VC_AUTOSTART_MS
 		if (!autostarted && !in.remote && v.state == VC_IDLE && in.now_ms >= VC_AUTOSTART_MS) {
 			remote.cmd = REMOTE_START;	/* bench start: pretend the MQTT start command arrived */
