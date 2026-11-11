@@ -1,0 +1,823 @@
+== files ==
+lib/libtm/sysdepend/pico_rp2040:
+tm_com.c
+usb
+
+lib/libtm/sysdepend/pico_rp2040/usb:
+pico
+tusb_config.h
+usb_console.c
+usb_descriptors.c
+usb_sdk_compat.c
+usb_tinyusb_glue.c
+
+lib/libtm/sysdepend/pico_rp2040/usb/pico:
+config_autogen.h
+version.h
+
+==== lib/libtm/sysdepend/pico_rp2040/usb/usb_console.c ====
+/*
+ *	usb_console.c
+ *	USB CDC-ACM backend for the T-Monitor console (RaspberryPi Pico / Pico W)
+ *
+ *	Producers (tm_snd_dat, called from any context including handlers) only
+ *	append to a ring buffer and return.  A service task owns TinyUSB and
+ *	drains the ring to the CDC endpoint.  An SMP producer may spin briefly
+ *	behind the other processor's ring update, but it never waits for the host
+ *	or performs a scheduler wait.  An unplugged or unenumerated host therefore
+ *	cannot stall the kernel -- output is dropped and counted instead.
+ */
+
+#include <tk/tkernel.h>
+#include <tk/typedef.h>
+#include <sys/sysdef.h>
+
+#if TK_SUPPORT_SMP
+#include <tk/smp.h>
+#endif
+
+#if USE_TMONITOR && TM_CONSOLE_USB_CDC
+
+/* usb_tinyusb_glue.c -- keeps TinyUSB headers out of this translation unit. */
+IMPORT int	tm_tusb_init(void);
+IMPORT void	tm_tusb_service(void);
+IMPORT int	tm_tusb_event_ready(void);
+IMPORT int	tm_tusb_mounted(void);
+IMPORT int	tm_tusb_connected(void);
+IMPORT unsigned	tm_tusb_write_available(void);
+IMPORT void	tm_tusb_write_char(char value);
+IMPORT void	tm_tusb_write_flush(void);
+IMPORT void	tm_tusb_discard_input(void);
+
+#define USB_TASK_PRIORITY	3
+#if TK_SUPPORT_SMP
+#define USB_TASK_STACK		4096
+#else
+#define USB_TASK_STACK		2048
+#endif
+#define USB_POLL_MS		10
+#define USB_TX_SIZE		4096U
+#define USB_TX_MASK		(USB_TX_SIZE - 1U)
+#define USB_TX_CHUNK		64U
+
+LOCAL UB		tx_buffer[USB_TX_SIZE];
+LOCAL volatile UW	tx_head;
+LOCAL volatile UW	tx_tail;
+LOCAL volatile UB	usb_started;
+
+#if TK_SUPPORT_SMP
+LOCAL T_SPLOCK		tx_lock;
+#endif
+
+/*
+ * Keep the producer ring safe in all supported configurations.  Interrupt
+ * masking is sufficient on UP; SMP additionally needs a cross-core lock.
+ * The interrupt-preserving form is required because T-Monitor output is
+ * permitted from both task and handler context.
+ */
+LOCAL void tx_lock_enter(UINT *intsts)
+{
+#if TK_SUPPORT_SMP
+	(void)ISpinLock(&tx_lock, intsts);
+#else
+	DI(*intsts);
+#endif
+}
+
+LOCAL void tx_lock_leave(UINT intsts)
+{
+#if TK_SUPPORT_SMP
+	(void)ISpinUnlock(&tx_lock, intsts);
+#else
+	EI(intsts);
+#endif
+}
+
+/* Bytes discarded because the ring was full.  Exposed so a test can assert
+   that a run produced no loss rather than assuming it. */
+EXPORT volatile UW	tm_usb_dropped;
+
+/*
+ * Link state, for diagnostics that cannot rely on the console itself:
+ *	0  service task not started
+ *	1  started, not enumerated by a host
+ *	2  enumerated (mounted)
+ *	3  enumerated and host asserted DTR
+ */
+EXPORT volatile UW	tm_usb_link_state;
+
+EXPORT volatile UW	tm_usb_init_ok;
+
+EXPORT UW tm_usb_state(void)
+{
+	return tm_usb_link_state;
+}
+
+/* Bytes still queued for the host.  A producer that wants its output to
+   survive must wait for this to reach zero before doing anything that could
+   overrun the ring. */
+EXPORT UW tm_usb_pending(void)
+{
+	UINT	intsts;
+	UW	pending;
+
+	tx_lock_enter(&intsts);
+	pending = (tx_head - tx_tail) & USB_TX_MASK;
+	tx_lock_leave(intsts);
+
+	return pending;
+}
+
+/*
+ * Ordered bring-up checks, for readout over GPIO when USB does not
+ * enumerate and the console therefore cannot describe its own failure.
+ * Returns the number of consecutive checks that passed.
+ */
+IMPORT volatile UW	tm_usb_irq_count;
+IMPORT volatile W	tm_usb_def_int_ercd;
+IMPORT volatile UW	tm_usb_nvic_enabled;
+IMPORT UW		tm_tusb_diag_controller_en(void);
+IMPORT UW		tm_tusb_diag_pullup_en(void);
+IMPORT UW		tm_tusb_diag_bus_seen(void);
+
+EXPORT INT tm_usb_diag_level(void)
+{
+	if(!tm_usb_init_ok)		return 0;	/* tusb_init failed      */
+	if(tm_usb_def_int_ercd != 0)	return 1;	/* tk_def_int failed     */
+	if(!tm_usb_nvic_enabled)	return 2;	/* NVIC not unmasked     */
+	if(!tm_tusb_diag_controller_en()) return 3;	/* controller disabled   */
+	if(!tm_tusb_diag_pullup_en())	return 4;	/* D+ pull-up off        */
+	if(tm_usb_irq_count == 0)	return 5;	/* no USB interrupt      */
+	if(!tm_tusb_diag_bus_seen())	return 6;	/* no host bus activity  */
+	if(tm_usb_link_state < 2)	return 7;	/* not enumerated        */
+	return 8;					/* fully up              */
+}
+
+IMPORT volatile W	tm_usb_service_tskid;
+
+LOCAL void usb_service_task(INT stacd, void *exinf)
+{
+	unsigned	available;
+	UB		chunk[USB_TX_CHUNK];
+	UW		count;
+	UINT		intsts;
+
+	(void)stacd;
+	(void)exinf;
+
+	/* Publish the task id before the controller is initialised, so an
+	   interrupt arriving during enumeration always has somewhere to go. */
+	tm_usb_service_tskid = tk_get_tid();
+
+	tm_usb_init_ok = tm_tusb_init() ? 1 : 0;
+	if(!tm_usb_init_ok) {
+		tm_usb_service_tskid = 0;
+		tk_ext_tsk();
+		return;
+	}
+
+	tm_usb_link_state = 1;
+
+	for(;;) {
+		/* Drain the whole event burst before yielding.  Returning to
+		   the scheduler between events would put a tick period into
+		   each stage of every control transfer. */
+		do {
+			tm_tusb_service();
+		} while(tm_tusb_event_ready());
+
+		tm_usb_link_state = tm_tusb_mounted()
+				  ? (tm_tusb_connected() ? 3 : 2)
+				  : 1;
+
+		/* Gate on enumeration, not on DTR.  If the host is not reading,
+		   write_available() falls to zero and the loop simply stops --
+		   it never waits. */
+		if(tm_tusb_mounted()) {
+			available = tm_tusb_write_available();
+			while(available > 0) {
+				count = 0;
+				tx_lock_enter(&intsts);
+				while(count < USB_TX_CHUNK && count < available &&
+				      tx_tail != tx_head) {
+					chunk[count++] = tx_buffer[tx_tail];
+					tx_tail = (tx_tail + 1U) & USB_TX_MASK;
+				}
+				tx_lock_leave(intsts);
+
+				if(count == 0) break;
+				for(UW i = 0; i < count; i++) {
+					tm_tusb_write_char((char)chunk[i]);
+				}
+				available -= count;
+			}
+			tm_tusb_write_flush();
+		}
+		tm_tusb_discard_input();
+
+		/* Sleep until the controller interrupts, with a periodic
+		   fallback so the ring still drains when the link is idle. */
+		tk_slp_tsk(USB_POLL_MS);
+	}
+}
+
+/*
+ * Start the console service.  Called from knl_start_device(), i.e. from the
+ * initial task once the kernel is fully up, so every application gets the
+ * console without having to wire it in itself.
+ */
+EXPORT ER tm_usb_console_start(void)
+{
+	T_CTSK	ctsk;
+	ID	tskid;
+	ER	ercd;
+
+	if(usb_started) return E_OK;
+
+#if TK_SUPPORT_SMP
+	ercd = InitSpinLock(&tx_lock);
+	if(ercd < E_OK) return ercd;
+#endif
+
+	/* TinyUSB is initialised inside the task itself, so the task id is
+	   published before the controller can raise its first interrupt. */
+	/*
+	 * Pinned to processor 1 (core 0).
+	 *
+	 * TinyUSB masks the USB interrupt by writing the calling core's NVIC,
+	 * and the NVIC is per core.  A service task free to migrate would
+	 * enable the interrupt on whichever core happened to run tusb_init()
+	 * and then take its critical sections on the other one, where the mask
+	 * protects nothing -- and enumeration fails, which is precisely how
+	 * this resurfaced once the global scheduler was allowed to place this
+	 * task.  Interrupt ownership and the task that services it must live on
+	 * the same processor.
+	 */
+	ctsk.exinf   = NULL;
+#if TK_SUPPORT_SMP
+	ctsk.tskatr  = TA_HLNG | TA_RNG0 | TA_ASSPRC;
+	ctsk.assprc  = TP_PRC1;
+#else
+	ctsk.tskatr  = TA_HLNG | TA_RNG0;
+	ctsk.assprc  = 0;
+#endif
+	ctsk.task    = (FP)usb_service_task;
+	ctsk.itskpri = USB_TASK_PRIORITY;
+	ctsk.stksz   = USB_TASK_STACK;
+	ctsk.bufptr  = NULL;
+
+	tskid = tk_cre_tsk(&ctsk);
+	if(tskid <= 0) return (ER)tskid;
+
+	ercd = tk_sta_tsk(tskid, 0);
+	if(ercd < E_OK) {
+		(void)tk_del_tsk(tskid);
+		return ercd;
+	}
+
+	usb_started = 1;
+	return E_OK;
+}
+
+/*
+ * Append to the ring.  This may spin on the short SMP ring lock, but never
+ * waits on the host and never performs a scheduler wait.
+ */
+EXPORT void tm_usb_console_put(const UB *buf, INT size)
+{
+	UW	next;
+	UINT	intsts;
+
+	tx_lock_enter(&intsts);
+	while(size-- > 0) {
+		next = (tx_head + 1U) & USB_TX_MASK;
+		if(next == tx_tail) {		/* full: drop, and count it */
+			tm_usb_dropped++;
+			buf++;
+			continue;
+		}
+		tx_buffer[tx_head] = *buf++;
+		tx_head = next;
+	}
+	tx_lock_leave(intsts);
+}
+
+#endif /* USE_TMONITOR && TM_CONSOLE_USB_CDC */
+
+==== lib/libtm/sysdepend/pico_rp2040/usb/usb_descriptors.c ====
+/* Minimal USB CDC ACM descriptors for the Thread-Metric console. */
+
+#include <string.h>
+#include "tusb.h"
+
+#define USB_VID 0x2e8a
+#define USB_PID 0x000a
+#define USB_BCD 0x0100
+
+static tusb_desc_device_t const device_descriptor = {
+    .bLength = sizeof(tusb_desc_device_t),
+    .bDescriptorType = TUSB_DESC_DEVICE,
+    .bcdUSB = 0x0200,
+    .bDeviceClass = TUSB_CLASS_MISC,
+    .bDeviceSubClass = MISC_SUBCLASS_COMMON,
+    .bDeviceProtocol = MISC_PROTOCOL_IAD,
+    .bMaxPacketSize0 = CFG_TUD_ENDPOINT0_SIZE,
+    .idVendor = USB_VID,
+    .idProduct = USB_PID,
+    .bcdDevice = USB_BCD,
+    .iManufacturer = 1,
+    .iProduct = 2,
+    .iSerialNumber = 3,
+    .bNumConfigurations = 1,
+};
+
+uint8_t const *tud_descriptor_device_cb(void)
+{
+    return (uint8_t const *)&device_descriptor;
+}
+
+enum {
+    ITF_CDC_CONTROL,
+    ITF_CDC_DATA,
+    ITF_COUNT,
+};
+
+#define CONFIG_TOTAL_LEN (TUD_CONFIG_DESC_LEN + TUD_CDC_DESC_LEN)
+
+static uint8_t const configuration_descriptor[] = {
+    TUD_CONFIG_DESCRIPTOR(1, ITF_COUNT, 0, CONFIG_TOTAL_LEN, 0, 100),
+    TUD_CDC_DESCRIPTOR(ITF_CDC_CONTROL, 4, 0x81, 8, 0x02, 0x82, 64),
+};
+
+uint8_t const *tud_descriptor_configuration_cb(uint8_t index)
+{
+    (void)index;
+    return configuration_descriptor;
+}
+
+static char const *const string_table[] = {
+    (const char[]){ 0x09, 0x04 },
+    "micro T-Kernel Forum",
+    "MTK3 Thread-Metric RP2040",
+    "MTK3PICO",
+    "Thread-Metric console",
+};
+static uint16_t string_descriptor[32];
+
+uint16_t const *tud_descriptor_string_cb(uint8_t index, uint16_t langid)
+{
+    size_t count;
+    (void)langid;
+
+    if (index >= sizeof(string_table) / sizeof(string_table[0])) return NULL;
+    if (index == 0) {
+        memcpy(&string_descriptor[1], string_table[0], 2);
+        count = 1;
+    } else {
+        char const *text = string_table[index];
+        for (count = 0; count < 31 && text[count] != '\0'; ++count) {
+            string_descriptor[1 + count] = (uint8_t)text[count];
+        }
+    }
+    string_descriptor[0] = (uint16_t)((TUSB_DESC_STRING << 8) | (2 * count + 2));
+    return string_descriptor;
+}
+
+==== lib/libtm/sysdepend/pico_rp2040/usb/usb_sdk_compat.c ====
+/* Pico SDK hooks needed by TinyUSB, implemented on micro T-Kernel. */
+
+#include <stdarg.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include "pico.h"
+#include "hardware/irq.h"
+
+typedef void (*mtk_fp_t)();
+typedef struct {
+    uint32_t intatr;
+    mtk_fp_t inthdr;
+} mtk_dint_t;
+
+extern int32_t tk_def_int(uint32_t intno, const mtk_dint_t *definition);
+extern int32_t tk_wup_tsk(int32_t tskid);
+
+/*
+ * Service task to wake when the controller raises an interrupt.  Enumeration
+ * is a chain of control transfers in which each stage is gated on the device
+ * responding to the previous one, so servicing on a timer tick puts the tick
+ * period into every stage and the host gives up and resets. Waking the task
+ * directly from the interrupt removes that latency entirely.
+ */
+volatile int32_t tm_usb_service_tskid;
+
+#define MTK_TA_HLNG 1U
+#define NVIC_ISER0 (*(volatile uint32_t *)0xe000e100u)
+#define NVIC_ICER0 (*(volatile uint32_t *)0xe000e180u)
+
+static irq_handler_t usb_irq_handler;
+
+/* Diagnostics: the console cannot report on the console. */
+volatile uint32_t tm_usb_irq_count;      /* USB interrupts actually taken */
+volatile int32_t  tm_usb_def_int_ercd = 1;  /* tk_def_int() result; 1 = not called */
+volatile uint32_t tm_usb_nvic_enabled;   /* NVIC ISER bit for USBCTRL_IRQ */
+
+static void usb_irq_dispatch(uint32_t intno)
+{
+    (void)intno;
+    tm_usb_irq_count++;
+    if (usb_irq_handler != NULL) usb_irq_handler();
+
+    /* Hand the queued events to the service task now, not on the next tick.
+       tk_wup_tsk() is legal from the task-independent part, and micro
+       T-Kernel counts wakeup requests, so one arriving while the task is
+       running is not lost -- its next tk_slp_tsk() returns immediately. */
+    if (tm_usb_service_tskid > 0) {
+        (void)tk_wup_tsk(tm_usb_service_tskid);
+    }
+}
+
+void irq_add_shared_handler(uint num, irq_handler_t handler, uint8_t order_priority)
+{
+    mtk_dint_t dint;
+    (void)order_priority;
+    usb_irq_handler = handler;
+    dint.intatr = MTK_TA_HLNG;
+    dint.inthdr = (mtk_fp_t)usb_irq_dispatch;
+    tm_usb_def_int_ercd = tk_def_int(num, &dint);
+}
+
+void irq_remove_handler(uint num, irq_handler_t handler)
+{
+    (void)handler;
+    NVIC_ICER0 = 1UL << num;
+    (void)tk_def_int(num, NULL);
+    usb_irq_handler = NULL;
+}
+
+void irq_set_enabled(uint num, bool enabled)
+{
+    if (enabled) NVIC_ISER0 = 1UL << num;
+    else NVIC_ICER0 = 1UL << num;
+    tm_usb_nvic_enabled = (NVIC_ISER0 >> num) & 1UL;
+}
+
+uint8_t rp2040_chip_version(void)
+{
+    volatile uint32_t const *chip_id = (volatile uint32_t const *)0x40000000u;
+    return (uint8_t)(*chip_id >> 28);
+}
+
+void hard_assertion_failure(void)
+{
+    NVIC_ICER0 = 1UL << 5;
+    for (;;) __asm__ volatile ("wfi");
+}
+
+void __attribute__((noreturn)) panic(const char *format, ...)
+{
+    (void)format;
+    hard_assertion_failure();
+    __builtin_unreachable();
+}
+
+==== lib/libtm/sysdepend/pico_rp2040/usb/usb_tinyusb_glue.c ====
+/* Keep Pico SDK types out of translation units that include µT-Kernel. */
+
+#include "tusb.h"
+
+uint32_t tusb_time_millis_api(void)
+{
+    volatile uint32_t const *timer_raw_low = (volatile uint32_t const *)0x40054028u;
+    return *timer_raw_low / 1000U;
+}
+
+int tm_tusb_init(void)
+{
+    return tusb_init() ? 1 : 0;
+}
+
+void tm_tusb_service(void)
+{
+    tud_task();
+}
+
+/* True while the device stack still has queued events to process.  Used to
+   drain a whole burst without returning to the scheduler between events. */
+int tm_tusb_event_ready(void)
+{
+    return tud_task_event_ready() ? 1 : 0;
+}
+
+/*
+ * Enumerated and configured by the host.  This, not tud_cdc_connected(), is
+ * the correct gate for draining output: tud_cdc_connected() reports the CDC
+ * line state (DTR), which many terminal programs never assert, so gating on
+ * it silently discards all output on an otherwise working link.
+ */
+int tm_tusb_mounted(void)
+{
+    return tud_mounted() ? 1 : 0;
+}
+
+/* DTR from the host.  Diagnostic only -- do not gate output on this. */
+int tm_tusb_connected(void)
+{
+    return tud_cdc_connected() ? 1 : 0;
+}
+
+unsigned tm_tusb_write_available(void)
+{
+    return tud_cdc_write_available();
+}
+
+void tm_tusb_write_char(char value)
+{
+    (void)tud_cdc_write_char(value);
+}
+
+void tm_tusb_write_flush(void)
+{
+    (void)tud_cdc_write_flush();
+}
+
+void tm_tusb_discard_input(void)
+{
+    while (tud_cdc_available()) (void)tud_cdc_read_char();
+}
+
+/*
+ * Diagnostics.  The console cannot report on the console, so these are read
+ * out over GPIO when USB fails to enumerate.
+ */
+#include "hardware/structs/usb.h"
+#include "hardware/regs/usb.h"
+
+uint32_t tm_tusb_diag_controller_en(void)
+{
+    return (usb_hw->main_ctrl & USB_MAIN_CTRL_CONTROLLER_EN_BITS) ? 1u : 0u;
+}
+
+uint32_t tm_tusb_diag_pullup_en(void)
+{
+    return (usb_hw->sie_ctrl & USB_SIE_CTRL_PULLUP_EN_BITS) ? 1u : 0u;
+}
+
+uint32_t tm_tusb_diag_bus_seen(void)
+{
+    /* Either the host has driven a bus reset, or the SIE reports a
+       connection.  Both indicate the host is actually talking to us. */
+    return (usb_hw->sie_status &
+            (USB_SIE_STATUS_BUS_RESET_BITS | USB_SIE_STATUS_CONNECTED_BITS))
+           ? 1u : 0u;
+}
+
+uint32_t tm_tusb_diag_inte(void)
+{
+    return usb_hw->inte;
+}
+
+==== lib/libtm/sysdepend/pico_rp2040/tm_com.c ====
+/*
+ *----------------------------------------------------------------------
+ *    micro T-Kernel 3.0 BSP
+ *
+ *    Copyright (C) 2021-2022 by Ken Sakamura.
+ *    This software is distributed under the T-License 2.2.
+ *----------------------------------------------------------------------
+ *
+ *    Released by TRON Forum(http://www.tron.org) at 2022/11.
+ *
+ *----------------------------------------------------------------------
+ */
+
+/*
+ *    tm_com.c
+ *    T-Monitor Communication low-level device driver (RaspberryPi Pico / Pico W)
+ *
+ *    Two sinks, because they are good at different things:
+ *
+ *      UART0   available from libtm_init() onward, needs no host, no
+ *              enumeration and no scheduler.  This is the only channel that
+ *              works during early boot, inside handlers, and after a fault,
+ *              so it stays compiled in as the early/panic mirror.
+ *
+ *      USB CDC the console you actually read.  Needs the scheduler (its
+ *              service task drains the ring) and a host that has enumerated
+ *              the device, so it says nothing about early boot.
+ *
+ *    Output goes to both when both are enabled.  Neither waits indefinitely
+ *    on external I/O: the UART wait is bounded and the USB path only appends
+ *    under a short SMP ring lock.  This matters -- the original driver spun
+ *    forever on a UART flag, which turns any console problem into an
+ *    unexplained hang.
+ */
+
+#include <tk/typedef.h>
+#include <sys/sysdef.h>
+
+#if USE_TMONITOR
+#include "../../libtm.h"
+
+#ifdef PICO_RP2040
+
+/* UART register definition (Use UART0) */
+#define UART_BASE              0x40034000
+
+#define UART_DR		(*(_UW*)(UART_BASE+0x000))
+#define UART_FR		(*(_UW*)(UART_BASE+0x018))
+#define UART_IBRD	(*(_UW*)(UART_BASE+0x024))
+#define UART_FBRD	(*(_UW*)(UART_BASE+0x028))
+#define UART_LCR_H	(*(_UW*)(UART_BASE+0x02C))
+#define UART_CR		(*(_UW*)(UART_BASE+0x030))
+
+#define	FR_TXFF		(1<<5)	// Transmit FIFO full
+#define	FR_RXFE		(1<<4)	// Receive FIFO empty
+
+/*
+ * Bound on the wait for FIFO space, in loop iterations.  Generous for a
+ * 115200 baud character (~87 us) yet still finite, so a UART that is
+ * unclocked or held in reset costs a bounded delay and a dropped byte
+ * instead of hanging the system.
+ */
+#define UART_TX_SPIN_LIMIT	200000
+
+#if TM_CONSOLE_UART
+LOCAL void uart_snd_dat(const UB* buf, INT size)
+{
+	UB	*b;
+	UW	spin;
+
+	for( b = (UB *)buf; size > 0; size--, b++ ){
+		spin = UART_TX_SPIN_LIMIT;
+		while( (UART_FR & FR_TXFF) != 0 ){
+			if( --spin == 0 ) return;	/* give up, drop the rest */
+		}
+		UART_DR = *b;
+	}
+}
+#endif /* TM_CONSOLE_UART */
+
+#if TM_CONSOLE_USB_CDC
+IMPORT void tm_usb_console_put(const UB *buf, INT size);
+#endif
+
+EXPORT	void	tm_snd_dat( const UB* buf, INT size )
+{
+#if TM_CONSOLE_USB_CDC
+	tm_usb_console_put(buf, size);
+#endif
+#if TM_CONSOLE_UART
+	uart_snd_dat(buf, size);
+#endif
+}
+
+EXPORT	void	tm_rcv_dat( UB* buf, INT size )
+{
+#if TM_CONSOLE_UART
+	for( ; size > 0; size--, buf++ ){
+		while ( (UART_FR & FR_RXFE) != 0 );
+		*buf = UART_DR & 0xff;
+	}
+#else
+	/* Console input is not implemented on the USB-only configuration. */
+	for( ; size > 0; size--, buf++ ){
+		*buf = 0;
+	}
+#endif
+}
+
+EXPORT	void	tm_com_init(void)
+{
+#if TM_CONSOLE_UART
+	UART_IBRD	= 67;			/* Baud rate setting */
+	UART_FBRD	= 52;
+	UART_LCR_H	= 0x70;			/* Communication data format setting */
+	UART_CR 	= (1<<9)|(1<<8)|(1<<0);	/* Communication enabled */
+#endif
+	/* The USB side needs the scheduler, so it is started later from
+	   knl_start_device(); nothing to do here. */
+}
+
+#endif /* PICO_RP2040 */
+#endif /* USE_TMONITOR */
+
+==== lib/libtm/libtm.c ====
+/*
+ *----------------------------------------------------------------------
+ *    micro T-Kernel 3.00.03
+ *
+ *    Copyright (C) 2006-2021 by Ken Sakamura.
+ *    This software is distributed under the T-License 2.2.
+ *----------------------------------------------------------------------
+ *
+ *    Released by TRON Forum(http://www.tron.org) at 2021/03/31.
+ *
+ *----------------------------------------------------------------------
+ */
+
+/*
+ *    libtm.c
+ *    T-Monitor compatible calls library
+ */
+#include <tk/tkernel.h>
+#include <tm/tmonitor.h>
+
+#if USE_TMONITOR
+#include "libtm.h"
+
+/*
+ * libtm_init() - libtm Initialize
+ * supported only on wait != 0 (polling not supported)
+ */
+EXPORT void libtm_init(void)
+{
+	tm_com_init();
+}
+
+/*
+ * tm_getchar() - Get Character
+ * supported only on wait != 0 (polling not supported)
+ */
+EXPORT INT tm_getchar( INT wait )
+{
+	UB	p;
+	UINT	imask;
+
+	DI(imask);
+	tm_rcv_dat(&p, 1);
+	EI(imask);
+
+	return (INT)p;
+}
+
+/*
+ * tm_getline() - Get Line
+ * special key is not supported
+ */
+EXPORT INT tm_getline( UB *buff )
+{
+	UB* p = buff;
+	int len = 0;
+	static const char LF = CHR_LF;
+	INT imask;
+
+	DI(imask);
+	while (1) {
+		tm_rcv_dat(p, 1);
+		tm_snd_dat(p, 1); /* echo back */
+		if (*p == CHR_CR) {
+			tm_snd_dat((const UB*)&LF, 1);
+			break;
+		} else if (*p == CHR_ETX) {
+			len = -1;
+			break;
+		}
+		p++; len++;
+	}
+	*p = 0x00;
+	EI(imask);
+
+	return len;
+}
+
+/*
+ * tm_putchar()
+ * Ctrl-C is not supported
+ */
+EXPORT INT tm_putchar( INT c )
+{
+	static const char CR = CHR_CR;
+	UB buf = (UB)c;
+	INT imask;
+
+	DI(imask);
+	if (buf == CHR_LF) {
+		tm_snd_dat((const UB*)&CR, 1);
+	}
+	tm_snd_dat(&buf, 1);
+	EI(imask);
+
+	return 0;
+}
+
+/*
+ * tm_putstring() - Put String
+ * Ctrl-C is not supported
+ */
+EXPORT INT tm_putstring( const UB *buff )
+{
+	const UB* p = buff;
+	INT imask;
+
+	DI(imask);
+	while ( *p != (UB)'\0' ) {
+		tm_putchar(*p++);
+	}
+	EI(imask);
+
+	return 0;
+}
+
+#endif /* USE_TMONITOR */
+==== inittask (console lines) ====
+119:		tm_printf((UB*)"\n\nmicroT-Kernel Version %x.%02x\n\n", VER_MAJOR, VER_MINOR);

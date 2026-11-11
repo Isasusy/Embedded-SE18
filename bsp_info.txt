@@ -1,0 +1,2627 @@
+=== lib/libbsp/sysdepend/cpu/rp2040/libbsp_pwm.c
+﻿/*
+ *----------------------------------------------------------------------
+ *    micro T-Kernel 3.0 BSP
+ *
+ *    Copyright (C) 2022-2023 by Ken Sakamura.
+ *    This software is distributed under the T-License 2.2.
+ *----------------------------------------------------------------------
+ *
+ *    Released by TRON Forum(http://www.tron.org) at 2023/05.
+ *
+ *----------------------------------------------------------------------
+ */
+
+/*
+ *	libbsp_pwm.c
+ *	PWM control (RP2040)
+ */
+
+#include <sys/machine.h>
+#ifdef CPU_RP2040
+
+#include <tk/tkernel.h>
+#include <tm/tmonitor.h>
+#include <bsp/libbsp.h>
+
+/*----------------------------------------------------------------------*/
+/*
+ * GPIO Control
+ */
+#define	PWM_GET_CHNO(port_no)	((port_no>>1)& 0x07)
+
+#define	PWM_CH_CSR(n)		(PWM_BASE + PWM_CHx_CSR + (n*0x14))
+#define	PWM_CH_DIV(n)		(PWM_BASE + PWM_CHx_DIV + (n*0x14))
+#define	PWM_CH_CTR(n)		(PWM_BASE + PWM_CHx_CTR + (n*0x14))
+#define	PWM_CH_CC(n)		(PWM_BASE + PWM_CHx_CC  + (n*0x14))
+#define	PWM_CH_TOP(n)		(PWM_BASE + PWM_CHx_TOP + (n*0x14))
+
+ER gpio_set_pin(UINT no, UINT mode)
+{
+	if(no >= GPIO_NUM) return E_PAR;
+
+	switch(mode) {
+	case GPIO_MODE_OUT:
+		out_w(GPIO_OE_SET, 1<<no);		// Enable output
+		clr_w(GPIO(no), GPIO_IE);		// Disable input
+		clr_w(GPIO(no), GPIO_OD);		// Enable output
+		break;
+	case GPIO_MODE_IN:
+		out_w(GPIO_OE_CLR, 1<<no);		// Disable output
+		set_w(GPIO(no), GPIO_OD);		// Disable output
+		set_w(GPIO(no), GPIO_IE);		// Enable input
+		break;
+	default:
+		return E_PAR;
+	}
+	out_w(GPIO_CTRL(no), GPIO_CTRL_FUNCSEL_SIO);
+
+	return E_OK;
+}
+
+ER gpio_set_val(UINT no, UINT val)
+{
+	if(no >= GPIO_NUM) return E_PAR;
+
+	if(val > 0) {
+		out_w(GPIO_OUT_SET, 1<<no);
+	} else {
+		out_w(GPIO_OUT_CLR, 1<<no);
+	}
+	return E_OK;
+}
+
+UINT gpio_get_val(UINT no)
+{
+	if(no >= GPIO_NUM) return E_PAR;
+
+	return (in_w(GPIO_IN) & 1<<no)?1:0;
+}
+
+/*----------------------------------------------------------------------*/
+/*
+ * PWM Control
+ */
+
+ER pwm_set_pin(UINT no)
+{
+	if(no >= GPIO_NUM) return E_PAR;
+
+	clr_w(GPIO(no), GPIO_OD);			// Enable output
+	set_w(GPIO(no), GPIO_IE);			// Enable input
+	out_w(GPIO_CTRL(no), GPIO_CTRL_FUNCSEL_PWM);	// Set function
+
+	return E_OK;
+}
+
+ER pwm_set_wrap(UINT no, UW wrap)
+{
+	if(no >= GPIO_NUM) return E_PAR;
+
+	out_w(PWM_CH_TOP(PWM_GET_CHNO(no)), wrap);	// Set counter wrap value
+	return E_OK;
+}
+
+ER pwm_set_cc(UINT no, UW cc)
+{
+	UINT	ch;
+	UW	reg_val;
+
+	if(no >= GPIO_NUM) return E_PAR;
+
+	ch = PWM_GET_CHNO(no);
+	reg_val = in_w(PWM_CH_CC(ch));			// Set counter compare value
+	if(no & 0x01) {	/* Chan B */
+		out_w(PWM_CH_CC(ch), (reg_val & 0x0000FFFF)| (cc<<16));
+	} else {	/* Chan A */
+		out_w(PWM_CH_CC(ch), (reg_val & 0xFFFF0000)| cc);
+	}
+	return E_OK;
+}
+
+ER pwm_set_enabled(UINT no, BOOL enable)
+{
+	if(no >= GPIO_NUM) return E_PAR;
+
+	if(enable) {
+		set_w(PWM_CH_CSR(PWM_GET_CHNO(no)), PWM_CH_CSR_EN);	// Enable cahnel
+	} else {
+		clr_w(PWM_CH_CSR(PWM_GET_CHNO(no)), PWM_CH_CSR_EN);	// Disable chanel
+	}
+	return	E_OK;
+}
+
+#endif /* CPU_RP2040 */=== device/i2c/i2c_cnf.h
+﻿/*
+ *----------------------------------------------------------------------
+ *    Device Driver for μT-Kernel 3.0
+ *
+ *    Copyright (C) 2020-2022 by Ken Sakamura.
+ *    This software is distributed under the T-License 2.2.
+ *----------------------------------------------------------------------
+ *
+ *    Released by TRON Forum(http://www.tron.org) at 2022/02.
+ *
+ *----------------------------------------------------------------------
+ */
+
+/*
+ *	i2c_cnf.h 
+ *	I2C device driver
+ *		Device configuration file
+ */
+#ifndef	__DEV_I2C_CNF_H__
+#define	__DEV_I2C_CNF_H__
+
+
+#define	DEVCNF_I2C_DEVNAME	"iic"		// Device name ("iic")
+
+#define	DEVCNF_I2C_MAX_SDATSZ	100		// Maximum transmission data size
+#define	DEVCNF_I2C_MAX_RDATSZ	100		// Maximum received data size
+
+
+/*----------------------------------------------------------------------*/
+/* Hardware dependent definition
+ */
+#define DEVDEF_I2C_CNF_PATH_(a)	#a
+#define DEVDEF_I2C_CNF_PATH(a)	DEVDEF_I2C_CNF_PATH_(a)
+#define DEVDEF_I2C_CNF_SYSDEP()	DEVDEF_I2C_CNF_PATH(sysdepend/TARGET_CPU_DIR/i2c_cnf_sysdep.h)
+#include DEVDEF_I2C_CNF_SYSDEP()
+
+#endif		/* __DEVCNF_I2C_H__ */
+=== device/adc/adc_cnf.h
+﻿/*
+ *----------------------------------------------------------------------
+ *    Device Driver for μT-Kernel 3.0
+ *
+ *    Copyright (C) 2020-2022 by Ken Sakamura.
+ *    This software is distributed under the T-License 2.2.
+ *----------------------------------------------------------------------
+ *
+ *    Released by TRON Forum(http://www.tron.org) at 2022/02.
+ *
+ *----------------------------------------------------------------------
+ */
+
+/*
+ *	adc_cnf.h 
+ *	A/D converter device driver configuration file
+ */
+#ifndef	__DEV_ADC_CNF_H__
+#define	__DEV_ADC_CNF_H__
+
+#define	DEVCNF_ADC_DEVNAME	"adc"		/* Device name ("adc") */
+
+
+/*---------------------------------------------------------------------*/
+/* Hardware dependent definition
+ */
+#define DEVDEF_ADC_CNF_PATH_(a)	#a
+#define DEVDEF_ADC_CNF_PATH(a)	DEVDEF_ADC_CNF_PATH_(a)
+#define DEVDEF_ADC_CNF_SYSDEP()	DEVDEF_ADC_CNF_PATH(sysdepend/TARGET_CPU_DIR/adc_cnf_sysdep.h)
+#include DEVDEF_ADC_CNF_SYSDEP()
+
+#endif		/* __DEV_ADC_CNF_H__ */
+=== device/i2c/sysdepend/rp2040/i2c_cnf_sysdep.h
+﻿/*
+ *----------------------------------------------------------------------
+ *    Device Driver for μT-Kernel 3.0
+ *
+ *    Copyright (C) 2022-2023 by Ken Sakamura.
+ *    This software is distributed under the T-License 2.2.
+ *----------------------------------------------------------------------
+ *
+ *    Released by TRON Forum(http://www.tron.org) at 2023/05.
+ *
+ *----------------------------------------------------------------------
+ */
+
+/*
+ *	i2c_cnf_sysdep.h 
+ *	I2C device configuration file
+ *		for RP2040
+ */
+#ifndef	__DEV_I2C_CNF_RP2040_H__
+#define	__DEV_I2C_CNF_RP2040_H__
+
+/* Device initialization */
+#define	DEVCNF_I2C_RESET	TRUE	// Reset I2C module
+#define	DEVCNF_I2C_SETPINFUNC	TRUE	// Set I/O pin function
+
+/* I/O pins, claimed when the driver starts (DEVCNF_USE_IIC = 1).
+ * Each must be a pin that has that I2C function (RP2040 datasheet,
+ * GPIO function table), and must be recorded in TEAM.md.
+ *   I2C0: SDA on GP0/4/8/12/16/20/28, SCL on GP1/5/9/13/17/21
+ *   I2C1: SDA on GP2/6/10/14/18/22/26, SCL on GP3/7/11/15/19/27
+ * Robo Pico: I2C0 = GP4/GP5 (Grove 3), I2C1 = GP2/GP3 (Grove 2, Maker port).
+ * GP8/GP9 are its motor 1 pins. */
+#define	DEVCNF_I2C0_SDA_PIN	8
+#define	DEVCNF_I2C0_SCL_PIN	9
+#define	DEVCNF_I2C1_SDA_PIN	6
+#define	DEVCNF_I2C1_SCL_PIN	7
+
+/* Register initial value */
+
+// Interrupt priority
+#define	DEVCNF_I2C0_INTPRI	2
+#define	DEVCNF_I2C1_INTPRI	2
+
+/* Communication timeout time */
+#define	DEVCNF_I2C0_TMO		1000
+#define	DEVCNF_I2C1_TMO		1000
+
+#endif		/* __DEV_I2C_CNF_RP2040_H__ */
+=== device/i2c/sysdepend/rp2040/i2c_sysdep.h
+﻿/*
+ *----------------------------------------------------------------------
+ *    Device Driver for μT-Kernel 3.0
+ *
+ *    Copyright (C) 2020-2022 by Ken Sakamura.
+ *    This software is distributed under the T-License 2.2.
+ *----------------------------------------------------------------------
+ *
+ *    Released by TRON Forum(http://www.tron.org) at 2022/11.
+ *
+ *----------------------------------------------------------------------
+ */
+
+/*
+ *	i2c_sysdep.h
+ *	I2C device driver
+ *	System-dependent definition for RP2040
+ */
+
+#ifndef	__DEV_I2C_RP2040_H__
+#define	__DEV_I2C_RP2040_H__
+
+#define	DEV_I2C_UNITNM		(2)	/* Number of devive units */
+#define	DEV_I2C_0		(0)	/* I2C1 */
+#define	DEV_I2C_1		(1)	/* I2C2 */
+
+/* I2C device driver operating state */
+#define	I2C_STS_START		0x0000
+#define	I2C_STS_RESTART		0x0001
+#define	I2C_STS_STOP		0x0003
+#define	I2C_STS_SEND		0x0004
+#define	I2C_STS_RECV		0x0005
+#define	I2C_STS_TOP		0x8000
+
+/*
+ * RCC registers ( I2C Clock setting )
+ */
+#define	RCC_CCIPR_I2CSEL	0x00003000	// I2C Clock source
+
+/*----------------------------------------------------------------------
+ * I2C registers
+ */
+/* Base address */
+#define	I2C0_BASE		0x40044000
+#define	I2C1_BASE		0x40048000
+
+/* Register offset */
+#define	I2Cx_CON		(0x00)		// I2C Control Register
+#define	I2Cx_TAR		(0x04)		// I2C Target Address Register
+#define	I2Cx_SAR		(0x08)		// I2C Slave Address Register
+#define	I2Cx_DATA_CMD		(0x10)		// I2C Rx/Tx Data Buffer and Command Register
+
+#define	I2Cx_SS_SCL_HCNT	(0x14)		// Standard Speed I2C Clock SCL High Count Register
+#define	I2Cx_SS_SCL_LCNT	(0x18)		// Standard Speed I2C Clock SCL Low Count Register
+#define	I2Cx_FS_SCL_HCNT	(0x1C)		// Fast Mode or Fast Mode Plus I2C Clock SCL High Count Register
+#define	I2Cx_FS_SCL_LCNT	(0x20)		// Fast Mode or Fast Mode Plus I2C Clock SCL Low Count Register
+
+#define	I2Cx_INTR_STAT		(0x2C)		// I2C Interrupt Status Register
+#define	I2Cx_INTR_MASK		(0x30)		// I2C Interrupt Mask Register
+#define I2Cx_RAW_INTR_STAT	(0x34)		// I2C Raw Interrupt Status Register
+
+#define	I2Cx_RX_TL		(0x38)		// I2C Receive FIFO Threshold Register
+#define	I2Cx_TX_TL		(0x3C)		// I2C Transmit FIFO Threshold Register
+
+#define	I2Cx_CLR_INTR		(0x40)		// Clear Combined and Individual Interrupt Register
+#define	I2Cx_CLR_RX_UNDER	(0x44)		// Clear RX_UNDER Interrupt Register
+#define	I2Cx_CLR_RX_OVER	(0x48)		// Clear RX_OVER Interrupt Register
+#define	I2Cx_CLR_TX_OVER	(0x4C)		// Clear TX_OVER Interrupt Register
+#define	I2Cx_CLR_RD_REQ		(0x50)		// Clear RD_REQ Interrupt Register
+#define	I2Cx_CLR_TX_ABRT	(0x54)		// Clear TX_ABRT Interrupt Register
+#define	I2Cx_CLR_RX_DONE	(0x58)		// Clear RX_DONE Interrupt Register
+#define	I2Cx_CLR_ACTIVITY	(0x5C)		// Clear ACTIVITY Interrupt Register
+#define	I2Cx_CLR_STOP_DET	(0x60)		// Clear STOP_DET Interrupt Register
+#define	I2Cx_CLR_START_DET	(0x64)		// Clear START_DET Interrupt Register
+#define	I2Cx_CLR_GEN_CALL	(0x68)		// Clear GEN_CALL Interrupt Register
+
+#define	I2Cx_ENABLE		(0x6C)		// I2C ENABLE Register
+#define	I2Cx_STATUS		(0x70)		// I2C STATUS Register
+#define	I2Cx_TXFLR		(0x74)		// I2C Transmit FIFO Level Register
+#define	I2Cx_RXFLR		(0x78)		// I2C Receive FIFO Level Register
+#define	I2Cx_SDA_HOLD		(0x7C)		// I2C SDA Hold Time Length Register
+#define	I2Cx_TX_ABRT_SOURCE	(0x80)		// I2C Transmit Abort Source Register
+#define	I2Cx_SLV_DATA_NACK_ONLY	(0x84)		// Generate Slave Data NACK Register
+
+#define	I2Cx_DMA_CR		(0x88)		// DMA Control Register
+#define	I2Cx_DMA_TDLR		(0x8C)		// DMA Transmit Data Level Register
+#define	I2Cx_DMA_RDLR		(0x90)		// DMA Transmit Data Level Register
+
+#define	I2Cx_SDA_SETUP		(0x94)		// I2C SDA Setup Register
+#define	I2Cx_ACK_GENERAL_CALL	(0x98)		// I2C ACK General Call Register
+#define	I2Cx_ENABLE_STATUS	(0x9C)		// I2C Enable Status Register
+#define	I2Cx_FS_SPKLEN		(0xA0)		// I2C SS, FS or FM+ spike suppression limit
+#define	I2Cx_CLR_RESTART_DET	(0xA8)		// Clear RESTART_DET Interrupt Register
+#define	I2Cx_COMP_PARAM_1	(0xF4)		// Component Parameter Register 1
+#define	I2Cx_COMP_VERSION	(0xF8)		// I2C Component Version Register
+#define	I2Cx_COMP_TYPE		(0xFc)		// I2C Component Type Register
+
+/* Register bit definition */
+#define	I2C_CON_TX_EMPTY_CTRL		(1<<8)
+#define	I2C_CON_SLAVE_DISABLE		(1<<6)
+#define	I2C_CON_RESTART_EN		(1<<5)
+#define	I2C_CON_7BIT_ADR		(0<<4)
+#define	I2C_CON_10BIT_ADR		(1<<4)
+#define	I2C_CON_SPEED_HIGH		(3<<1)
+#define	I2C_CON_SPEED_FAST		(2<<1)
+#define	I2C_CON_SPEED_STANDARD		(1<<1)
+#define	I2C_CON_MASTER_MODE		(1<<0)
+
+#define	I2C_TAR_7BIT_ADR		(0x007F)
+#define	I2C_TAR_10BIT_ADR		(0x03FF)
+
+#define	I2C_ENABLE_TX_CMD_BLOCK		(1<<2)
+#define	I2C_ENABLE_ABORT		(1<<1)
+#define	I2C_ENABLE_ENABLE		(1<<0)
+
+#define	I2C_DATA_CMD_FIRST_DATA_BYTE	(1<<11)
+#define	I2C_DATA_CMD_RESTART		(1<<10)
+#define	I2C_DATA_CMD_STOP		(1<<9)
+#define	I2C_DATA_CMD_CMD_WRITE		(0<<8)
+#define	I2C_DATA_CMD_CMD_READ		(1<<8)
+#define	I2C_DATA_CMD_DAT		(0x000000FF)
+
+#define	I2C_INT_RESTART_DET		(1<<12)	// Detect RESTART condition (slave)
+#define	I2C_INT_GEN_CALL		(1<<11)	// Receive general call address 
+#define	I2C_INT_START_DET		(1<<10)	// Detect STRAT & RESTART condition (master & slave)
+#define	I2C_INT_STOP_DET		(1<<9)	// Detect STOP condition (master & slave)
+#define	I2C_INT_ACTIVITY		(1<<8)	// Captures activity
+#define	I2C_INT_RX_DONE			(1<<7)	// Transfer completed(slave)
+#define	I2C_INT_TX_ABRT			(1<<6)	// Transmit abort  (master & slave)
+#define	I2C_INT_RD_REQ			(1<<5)	// Request to receive (slave)
+#define	I2C_INT_TX_EMPTY		(1<<4)	// Transmit buffer empty
+#define	I2C_INT_TX_OVER			(1<<3)	// Transmit buffer over
+#define	I2C_INT_RX_FULL			(1<<2)	// Receive buffer full
+#define	I2C_INT_RX_OVER			(1<<1)	// Receive buffer over
+#define	I2C_INT_RX_UNDER		(1<<0)	// Receive buffer under
+
+#define	I2C_STATUS_RFF			(1<<4)
+#define	I2C_STATUS_RFNE			(1<<3)
+#define	I2C_STATUS_TFE			(1<<2)
+#define	I2C_STATUS_TFNF			(1<<1)
+#define	I2C_STATUS_ACTIVITY		(1<<0)
+
+#define	I2C_DMA_CR_TDMAE		(1<<1)
+#define	I2C_DMA_CR_RDMAE		(1<<0)
+
+/*----------------------------------------------------------------------
+ * I2C Register access macros
+ */
+#define	I2C_CON(u)			(ba[u] + I2Cx_CON)		// I2C Control Register
+#define	I2C_TAR(u)			(ba[u] + I2Cx_TAR)		// I2C Target Address Register
+#define	I2C_SAR(u)			(ba[u] + I2Cx_SAR)		// I2C Slave Address Register
+#define	I2C_DATA_CMD(u)			(ba[u] + I2Cx_DATA_CMD)	// I2C Rx/Tx Data Buffer and Command Register
+#define	I2C_SS_SCL_HCNT(u)		(ba[u] + I2Cx_SS_SCL_HCNT)	// Standard Speed I2C Clock SCL High Count Register
+#define	I2C_SS_SCL_LCNT(u)		(ba[u] + I2Cx_SS_SCL_LCNT)	// Standard Speed I2C Clock SCL Low Count Register
+#define	I2C_FS_SCL_HCNT(u)		(ba[u] + I2Cx_FS_SCL_HCNT)	// Fast Mode or Fast Mode Plus I2C Clock SCL High Count Register
+#define	I2C_FS_SCL_LCNT(u)		(ba[u] + I2Cx_FS_SCL_LCNT)	// Fast Mode or Fast Mode Plus I2C Clock SCL Low Count Register
+#define	I2C_INTR_STAT(u)		(ba[u] + I2Cx_INTR_STAT)	// I2C Interrupt Status Register
+#define	I2C_INTR_MASK(u)		(ba[u] + I2Cx_INTR_MASK)	// I2C Interrupt Mask Register
+#define I2C_RAW_INTR_STAT(u)		(ba[u] + I2Cx_RAW_INTR_STAT)	// I2C Raw Interrupt Status Register
+#define	I2C_RX_TL(u)			(ba[u] + I2Cx_RX_TL)		// I2C Receive FIFO Threshold Register
+#define	I2C_TX_TL(u)			(ba[u] + I2Cx_TX_TL)		// I2C Transmit FIFO Threshold Register
+#define	I2C_CLR_INTR(u)			(ba[u] + I2Cx_CLR_INTR)	// Clear Combined and Individual Interrupt Register
+#define	I2C_CLR_RX_UNDER(u)		(ba[u] + I2Cx_CLR_RX_UNDER)	// Clear RX_UNDER Interrupt Register
+#define	I2C_CLR_RX_OVER(u)		(ba[u] + I2Cx_CLR_RX_OVER)	// Clear RX_OVER Interrupt Register
+#define	I2C_CLR_TX_OVER(u)		(ba[u] + I2Cx_CLR_TX_OVER)	// Clear TX_OVER Interrupt Register
+#define	I2C_CLR_RD_REQ(u)		(ba[u] + I2Cx_CLR_RD_REQ)	// Clear RD_REQ Interrupt Register
+#define	I2C_CLR_TX_ABRT(u)		(ba[u] + I2Cx_CLR_TX_ABRT)	// Clear TX_ABRT Interrupt Register
+#define	I2C_CLR_RX_DONE(u)		(ba[u] + I2Cx_CLR_RX_DONE)	// Clear RX_DONE Interrupt Register
+#define	I2C_CLR_ACTIVITY(u)		(ba[u] + I2Cx_CLR_ACTIVITY)	// Clear ACTIVITY Interrupt Register
+#define	I2C_CLR_STOP_DET(u)		(ba[u] + I2Cx_CLR_STOP_DET)	// Clear STOP_DET Interrupt Register
+#define	I2C_CLR_START_DET(u)		(ba[u] + I2Cx_CLR_START_DET)	// Clear START_DET Interrupt Register
+#define	I2C_CLR_GEN_CALL(u)		(ba[u] + I2Cx_CLR_GEN_CALL)	// Clear GEN_CALL Interrupt Register
+#define	I2C_ENABLE(u)			(ba[u] + I2Cx_ENABLE)		// I2C ENABLE Register
+#define	I2C_STATUS(u)			(ba[u] + I2Cx_STATUS)		// I2C STATUS Register
+#define	I2C_TXFLR(u)			(ba[u] + I2Cx_TXFLR)		// I2C Transmit FIFO Level Register
+#define	I2C_RXFLR(u)			(ba[u] + I2Cx_RXFLR)		// I2C Receive FIFO Level Register
+#define	I2C_SDA_HOLD(u)			(ba[u] + I2Cx_SDA_HOLD)	// I2C SDA Hold Time Length Register
+#define	I2C_TX_ABRT_SOURCE(u)		(ba[u] + I2Cx_TX_ABRT_SOURCE)	// I2C Transmit Abort Source Register
+#define	I2C_SLV_DATA_NACK_ONLY(u)	(ba[u] + I2Cx_SLV_DATA_NACK_ONLY)	// Generate Slave Data NACK Register
+#define	I2C_DMA_CR(u)			(ba[u] + I2Cx_DMA_CR)		// DMA Control Register
+#define	I2C_DMA_TDLR(u)			(ba[u] + I2Cx_DMA_TDLR)	// DMA Transmit Data Level Register
+#define	I2C_DMA_RDLR(u)			(ba[u] + I2Cx_DMA_RDLR)	// DMA Transmit Data Level Register
+#define	I2C_SDA_SETUP(u)		(ba[u] + I2Cx_SDA_SETUP)	// I2C SDA Setup Register
+#define	I2C_ACK_GENERAL_CALL(u)		(ba[u] + I2Cx_ACK_GENERAL_CALL)// I2C ACK General Call Register
+#define	I2C_ENABLE_STATUS(u)		(ba[u] + I2Cx_ENABLE_STATUS)	// I2C Enable Status Register
+#define	I2C_FS_SPKLEN(u)		(ba[u] + I2Cx_FS_SPKLEN)	// I2C SS, FS or FM+ spike suppression limit
+#define	I2C_CLR_RESTART_DET(u)		(ba[u] + I2Cx_CLR_RESTART_DET)	// Clear RESTART_DET Interrupt Register
+#define	I2C_COMP_PARAM_1(u)		(ba[u] + I2Cx_COMP_PARAM_1)	// Component Parameter Register 1
+#define	I2C_COMP_VERSION(u)		(ba[u] + I2Cx_COMP_VERSION)	// I2C Component Version Register
+#define	I2C_COMP_TYPE(u)		(ba[u] + I2Cx_COMP_TYPE)	// I2C Component Type Register
+
+/* 
+ * I2C interrupt number
+ */
+#define	INTNO_I2C0		23
+#define	INTNO_I2C1		24
+
+#endif		/* __DEV_I2C_RP2040_H__ */
+=== device/i2c/sysdepend/rx231/i2c_cnf_sysdep.h
+﻿/*
+ *----------------------------------------------------------------------
+ *    Device Driver for μT-Kernel 3.0
+ *
+ *    Copyright (C) 2020-2022 by Ken Sakamura.
+ *    This software is distributed under the T-License 2.2.
+ *----------------------------------------------------------------------
+ *
+ *    Released by TRON Forum(http://www.tron.org) at 2022/02.
+ *
+ *----------------------------------------------------------------------
+ */
+
+/*
+ *	i2c_cnf_sysdep.h 
+ *	I2C device configuration file
+ *		for RX231
+ */
+#ifndef	__DEV_I2C_CNF_RX231_H__
+#define	__DEV_I2C_CNF_RX231_H__
+
+/* Device initialization */
+#define DEVCONF_I2C_INIT_MSTP	FALSE		// Initialize module stop
+
+/* Frequency selection (0-7)  ICMR1.CKS */
+#define	DEVCNF_I2C_CKS		1
+
+/* Interrupt priority */
+#define	DEVCNF_I2C_INTPRI	5
+
+/* Communication timeout time */
+#define	DEVCNF_I2C_TMO		1000
+
+#endif		/* __DEV_I2C_CNF_RX231_H__ */
+=== device/i2c/sysdepend/rx231/i2c_sysdep.h
+﻿/*
+ *----------------------------------------------------------------------
+ *    Device Driver for μT-Kernel 3.0
+ *
+ *    Copyright (C) 2020-2022 by Ken Sakamura.
+ *    This software is distributed under the T-License 2.2.
+ *----------------------------------------------------------------------
+ *
+ *    Released by TRON Forum(http://www.tron.org) at 2022/02
+ *
+ *----------------------------------------------------------------------
+ */
+
+/*
+ *	i2c_sysdep.h
+ *	I2C device driver
+ *	System-dependent definition for RX231
+ */
+
+#ifndef	__DEV_I2C_RX231_H__
+#define	__DEV_I2C_RX231_H__
+
+#define	DEV_I2C_UNITNM		(1)	/* Number of devive units */
+
+/* I2C device driver operating state */
+#define	I2C_STS_START		0x0000
+#define	I2C_STS_RESTART		0x0001
+#define	I2C_STS_STOP		0x0003
+#define	I2C_STS_SEND		0x0004
+#define	I2C_STS_RECV		0x0005
+#define	I2C_STS_TOP		0x8000
+#define	I2C_STS_LAST		0x0800
+
+/*----------------------------------------------------------------------
+ * RIIC registers
+ */
+#define	RIIC_BASE		0x00088300
+
+#define	RIIC_ICCR1		(RIIC_BASE+0x00)	/* I2C bus cintrol reg. 1 */
+#define	RIIC_ICCR2		(RIIC_BASE+0x01)	/* I2C bus cintrol reg. 2 */
+#define RIIC_ICMR1		(RIIC_BASE+0x02)	/* I2C bus mode reg. 1 */
+#define RIIC_ICMR2		(RIIC_BASE+0x03)	/* I2C bus mode reg. 2 */
+#define RIIC_ICMR3		(RIIC_BASE+0x04)	/* I2C bus mode reg. 3 */
+#define	RIIC_ICFER		(RIIC_BASE+0x05)	/* I2C bus function enable reg */
+#define	RIIC_ICSER		(RIIC_BASE+0x06)	/* I2C bus Status enable reg. */
+#define	RIIC_ICIER		(RIIC_BASE+0x07)	/* I2C bus Interrupt enable reg. */
+#define	RIIC_ICSR1		(RIIC_BASE+0x08)	/* I2C bus Status reg. 1 */
+#define	RIIC_ICSR2		(RIIC_BASE+0x09)	/* I2C bus Status reg. 2 */
+
+#define	RIIC_SARL(y)		(RIIC_BASE+0x0A+(y<<1))	/* Slave address reg. L0~2 */
+#define	RIIC_SARU(y)		(RIIC_BASE+0x0B+(y<<1))	/* Slave address reg. U0~2 */
+
+#define	RIIC_ICBRL		(RIIC_BASE+ 0x10)	/* I2C bus bit rate Low reg. */
+#define	RIIC_ICBRH		(RIIC_BASE+ 0x11)	/* I2C bus bit rate High reg. */
+#define	RIIC_ICDRT		(RIIC_BASE+ 0x12)	/* I2C bus transmit data reg. */
+#define	RIIC_ICDRR		(RIIC_BASE+ 0x13)	/* I2C bus receive data reg. */
+
+#define	RIIC_ICCR1_ICE		(1<<7)	
+#define	RIIC_ICCR1_IICRST	(1<<6)
+#define	RIIC_ICCR1_SOWP		(1<<4)
+
+#define	RIIC_IICR2_BBSY		(1<<7)
+#define	RIIC_IICR2_ST		(1<<1)
+#define	RIIC_IICR2_RS		(1<<2)
+#define	RIIC_IICR2_SP		(1<<3)
+
+#define RIIC_ICMR3_WAIT		(1<<6)
+#define RIIC_ICMR3_ACKWP	(1<<4)
+#define RIIC_ICMR3_ACKBT	(1<<3)
+
+#define	RIIC_ICIER_TIE		(1<<7)
+#define	RIIC_ICIER_TEIE		(1<<6)
+#define	RIIC_ICIER_RIE		(1<<5)
+#define	RIIC_ICIER_NAKIE	(1<<4)
+#define	RIIC_ICIER_SPIE		(1<<3)
+#define	RIIC_ICIER_STIE		(1<<2)
+#define	RIIC_ICIER_ALIE		(1<<1)
+#define	RIIC_ICIER_TMOIE	(1<<0)
+
+#define RIIC_ICSR2_TDRE		(1<<7)
+#define RIIC_ICSR2_TEND		(1<<6)
+#define RIIC_ICSR2_RDRF		(1<<5)
+#define RIIC_ICSR2_NACKF	(1<<4)
+#define RIIC_ICSR2_STOP		(1<<3)
+#define RIIC_ICSR2_START	(1<<2)
+#define RIIC_ICSR2_AL		(1<<1)
+#define RIIC_ICSR2_TMOF		(1<<0)
+
+
+/* Register initial value */
+#define	RIIC_ICMR1_INI		(1<<4)
+#define	RIIC_ICBRH_INI		(14-1)
+#define	RIIC_ICBRL_INI		(21-1)
+
+/* 
+ * I2C interrupt number
+  */
+#define	INTNO_RIIC_EEI		246
+#define	INTNO_RIIC_RXI		247
+#define	INTNO_RIIC_TXI		248
+#define	INTNO_RIIC_TEI		249
+
+#endif		/* __DEV_I2C_RX231_H__ */
+=== device/i2c/sysdepend/rx65n/i2c_cnf_sysdep.h
+﻿/*
+ *----------------------------------------------------------------------
+ *    Device Driver for μT-Kernel 3.0
+ *
+ *    Copyright (C) 2020-2022 by Ken Sakamura.
+ *    This software is distributed under the T-License 2.2.
+ *----------------------------------------------------------------------
+ *
+ *    Released by TRON Forum(http://www.tron.org) at 2022/04.
+ *
+ *----------------------------------------------------------------------
+ */
+
+/*
+ *	i2c_cnf_sysdep.h 
+ *	I2C device configuration file
+ *		for RX65N
+ */
+#ifndef	__DEV_I2C_CNF_RX65N_H__
+#define	__DEV_I2C_CNF_RX65N_H__
+
+/* Device initialization */
+#define DEVCONF_I2C_INIT_MSTP	FALSE		// Initialize module stop
+
+/* Communication bit rate setting */
+#define	DEVCNF_I2C_CKS		5		// Frequency selection (0-7)  ICMR1.CKS
+#define	DEVCNF_ICBRH_INI	(0xEE)
+#define	DEVCNF_ICBRL_INI	(0xF1)
+
+/* Interrupt priority */
+#define	DEVCNF_I2C0_INTPRI	5
+#define	DEVCNF_I2C1_INTPRI	5
+#define	DEVCNF_I2C2_INTPRI	5
+
+/* Communication timeout time */
+#define	DEVCNF_I2C0_TMO		1000
+#define	DEVCNF_I2C1_TMO		1000
+#define	DEVCNF_I2C2_TMO		1000
+
+#endif		/* __DEV_I2C_CNF_RX65N_H__ */
+=== device/i2c/sysdepend/rx65n/i2c_sysdep.h
+﻿/*
+ *----------------------------------------------------------------------
+ *    Device Driver for μT-Kernel 3.0
+ *
+ *    Copyright (C) 2020-2022 by Ken Sakamura.
+ *    This software is distributed under the T-License 2.2.
+ *----------------------------------------------------------------------
+ *
+ *    Released by TRON Forum(http://www.tron.org) at 2022/04.
+ *
+ *----------------------------------------------------------------------
+ */
+
+/*
+ *	i2c_sysdep.h
+ *	I2C device driver
+ *	System-dependent definition for RX65N
+ */
+
+#ifndef	__DEV_I2C_RX65N_H__
+#define	__DEV_I2C_RX65N_H__
+
+#define	DEV_I2C_UNITNM	(3)	// Number of devive units
+#define	DEV_I2C_UNIT0	(0)
+#define	DEV_I2C_UNIT1	(1)
+#define	DEV_I2C_UNIT2	(2)
+
+/* I2C device driver operating state */
+#define	I2C_STS_START	0x0000
+#define	I2C_STS_RESTART	0x0001
+#define	I2C_STS_STOP	0x0003
+#define	I2C_STS_SEND	0x0004
+#define	I2C_STS_RECV	0x0005
+#define	I2C_STS_TOP	0x8000
+#define	I2C_STS_LAST	0x0800
+
+/*----------------------------------------------------------------------
+ * RIIC registers
+ */
+#define	RIIC0_BASE		(0x00088300UL)
+#define	RIIC1_BASE		(0x00088320UL)
+#define	RIIC2_BASE		(0x00088340UL)
+
+#define	RIICx_ICCR1		(0x00)	/* I2C bus cintrol reg. 1 */
+#define	RIICx_ICCR2		(0x01)	/* I2C bus cintrol reg. 2 */
+#define RIICx_ICMR1		(0x02)	/* I2C bus mode reg. 1 */
+#define RIICx_ICMR2		(0x03)	/* I2C bus mode reg. 2 */
+#define RIICx_ICMR3		(0x04)	/* I2C bus mode reg. 3 */
+#define	RIICx_ICFER		(0x05)	/* I2C bus function enable reg */
+#define	RIICx_ICSER		(0x06)	/* I2C bus Status enable reg. */
+#define	RIICx_ICIER		(0x07)	/* I2C bus Interrupt enable reg. */
+#define	RIICx_ICSR1		(0x08)	/* I2C bus Status reg. 1 */
+#define	RIICx_ICSR2		(0x09)	/* I2C bus Status reg. 2 */
+
+#define	RIICx_SARL(y)		(0x0A+(y<<1))	/* Slave address reg. L0~2 */
+#define	RIICx_SARU(y)		(0x0B+(y<<1))	/* Slave address reg. U0~2 */
+
+#define	RIICx_ICBRL		(0x10)	/* I2C bus bit rate Low reg. */
+#define	RIICx_ICBRH		(0x11)	/* I2C bus bit rate High reg. */
+#define	RIICx_ICDRT		(0x12)	/* I2C bus transmit data reg. */
+#define	RIICx_ICDRR		(0x13)	/* I2C bus receive data reg. */
+
+#define	RIIC_ICCR1_ICE		(1<<7)	
+#define	RIIC_ICCR1_IICRST	(1<<6)
+#define	RIIC_ICCR1_SOWP		(1<<4)
+
+#define	RIIC_IICR2_BBSY		(1<<7)
+#define	RIIC_IICR2_ST		(1<<1)
+#define	RIIC_IICR2_RS		(1<<2)
+#define	RIIC_IICR2_SP		(1<<3)
+
+#define	RIIC_ICMR1_MTWP		(1<<7)
+
+#define RIIC_ICMR3_WAIT		(1<<6)
+#define RIIC_ICMR3_ACKWP	(1<<4)
+#define RIIC_ICMR3_ACKBT	(1<<3)
+
+#define	RIIC_ICIER_TIE		(1<<7)
+#define	RIIC_ICIER_TEIE		(1<<6)
+#define	RIIC_ICIER_RIE		(1<<5)
+#define	RIIC_ICIER_NAKIE	(1<<4)
+#define	RIIC_ICIER_SPIE		(1<<3)
+#define	RIIC_ICIER_STIE		(1<<2)
+#define	RIIC_ICIER_ALIE		(1<<1)
+#define	RIIC_ICIER_TMOIE	(1<<0)
+
+#define RIIC_ICSR2_TDRE		(1<<7)
+#define RIIC_ICSR2_TEND		(1<<6)
+#define RIIC_ICSR2_RDRF		(1<<5)
+#define RIIC_ICSR2_NACKF	(1<<4)
+#define RIIC_ICSR2_STOP		(1<<3)
+#define RIIC_ICSR2_START	(1<<2)
+#define RIIC_ICSR2_AL		(1<<1)
+#define RIIC_ICSR2_TMOF		(1<<0)
+
+/* 
+ * I2C interrupt number
+*/
+#define	INTNO_RIIC0_RXI		52
+#define	INTNO_RIIC0_TXI		53
+#define	INTNO_RIIC0_TEI		(INTNO_GROUP_BL1+13)	//  Group interrupts (GROUPBL1 - 13)
+#define	INTNO_RIIC0_EEI		(INTNO_GROUP_BL1+14)	//  Group interrupts (GROUPBL1 - 14)
+
+#define	INTNO_RIIC1_RXI		50
+#define	INTNO_RIIC1_TXI		51
+#define	INTNO_RIIC1_TEI		(INTNO_GROUP_BL1+28)	//  Group interrupts (GROUPBL1 - 28)
+#define	INTNO_RIIC1_EEI		(INTNO_GROUP_BL1+29)	//  Group interrupts (GROUPBL1 - 29)
+
+#define	INTNO_RIIC2_RXI		54
+#define	INTNO_RIIC2_TXI		55
+#define	INTNO_RIIC2_TEI		(INTNO_GROUP_BL1+15)	//  Group interrupts (GROUPBL1 - 15)
+#define	INTNO_RIIC2_EEI		(INTNO_GROUP_BL1+16)	//  Group interrupts (GROUPBL1 - 16)
+
+#endif		/* __DEV_I2C_RX65N_H__ */
+=== device/i2c/sysdepend/rza2m/i2c_cnf_sysdep.h
+﻿/*
+ *----------------------------------------------------------------------
+ *    Device Driver for μT-Kernel 3.0
+ *
+ *    Copyright (C) 2022 by Ken Sakamura.
+ *    This software is distributed under the T-License 2.2.
+ *----------------------------------------------------------------------
+ *
+ *    Released by TRON Forum(http://www.tron.org) at 2022/02.
+ *
+ *----------------------------------------------------------------------
+ */
+
+/*
+ *	i2c_cnf_sysdep.h 
+ *	I2C device configuration file
+ *		for RZ/A2M
+ */
+#ifndef	__DEV_I2C_CNF_RZA2M_H__
+#define	__DEV_I2C_CNF_RZA2M_H__
+
+/* Device initialization */
+#define DEVCONF_I2C_INIT_MSTP	FALSE		// Initialize module stop
+
+/* Frequency selection (0-7)  ICMR1.CKS */
+#define	DEVCNF_I2C0_CKS		(5)
+#define	DEVCNF_I2C1_CKS		(5)
+#define	DEVCNF_I2C2_CKS		(5)
+#define	DEVCNF_I2C3_CKS		(5)
+
+/* Clock width  bit0-4:BRL  bit8-12 BRH */
+#define	DEVCNF_I2C0_BR		(16<<8)|(14)
+#define	DEVCNF_I2C1_BR		(16<<8)|(14)
+#define	DEVCNF_I2C2_BR		(16<<8)|(14)
+#define	DEVCNF_I2C3_BR		(16<<8)|(14)
+
+/* Interrupt priority */
+#define	DEVCNF_I2C0_INTPRI	5
+#define	DEVCNF_I2C1_INTPRI	5
+#define	DEVCNF_I2C2_INTPRI	5
+#define	DEVCNF_I2C3_INTPRI	5
+
+/* Communication timeout time */
+#define	DEVCNF_I2C_TMO		1000
+
+#endif		/* __DEV_I2C_CNF_RZA2M_H__ */
+=== device/i2c/sysdepend/rza2m/i2c_sysdep.h
+﻿/*
+ *----------------------------------------------------------------------
+ *    Device Driver for micro T-Kernel
+ *
+ *    Copyright (C) 2020-2022 by Ken Sakamura.
+ *    This software is distributed under the T-License 2.2.
+ *----------------------------------------------------------------------
+ *
+ *    Released by TRON Forum(http://www.tron.org) at 2022/02.
+ *
+ *----------------------------------------------------------------------
+ */
+
+/*
+ *	i2c_sysdep.h
+ *	I2C device driver
+ *	System-dependent definition for RZ/A2M
+ */
+
+#ifndef	__DEV_I2C_RZA2M_H__
+#define	__DEV_I2C_RZA2M_H__
+
+#define	DEV_I2C_UNITNM		(4)	/* Number of devive units */
+#define	DEV_I2C_0		(0)	/* RIIC0 */
+#define	DEV_I2C_1		(1)	/* RIIC1 */
+#define	DEV_I2C_2		(2)	/* RIIC2 */
+#define	DEV_I2C_3		(3)	/* RIIC3 */
+
+/* I2C device driver operating state */
+#define	I2C_STS_START		0x0000
+#define	I2C_STS_RESTART		0x0001
+#define	I2C_STS_STOP		0x0003
+#define	I2C_STS_SEND		0x0004
+#define	I2C_STS_RECV		0x0005
+#define	I2C_STS_TOP		0x8000
+#define	I2C_STS_LAST		0x0800
+
+/*----------------------------------------------------------------------
+ * RIIC registers
+ */
+#define	RIIC0_BASE		0xE803A000
+#define	RIIC1_BASE		0xE803A400
+#define	RIIC2_BASE		0xE803A800
+#define	RIIC3_BASE		0xE803AC00
+
+#define	RIICx_CR1		(0x00)		/* I2C bus cintrol reg. 1 */
+#define	RIICx_CR2		(0x04)		/* I2C bus cintrol reg. 2 */
+#define RIICx_MR1		(0x08)		/* I2C bus mode reg. 1 */
+#define RIICx_MR2		(0x0C)		/* I2C bus mode reg. 2 */
+#define RIICx_MR3		(0x10)		/* I2C bus mode reg. 3 */
+#define	RIICx_FER		(0x14)		/* I2C bus function enable reg */
+#define	RIICx_SER		(0x18)		/* I2C bus Status enable reg. */
+#define	RIICx_IER		(0x1C)		/* I2C bus Interrupt enable reg. */
+#define	RIICx_SR1		(0x20)		/* I2C bus Status reg. 1 */
+#define	RIICx_SR2		(0x24)		/* I2C bus Status reg. 2 */
+#define	RIICx_SAR0		(0x28)		/* Slave address reg. 0 */
+#define	RIICx_SAR1		(0x2C)		/* Slave address reg. 1 */
+#define	RIICx_SAR2		(0x30)		/* Slave address reg. 2 */
+#define	RIICx_BRL		(0x34)		/* I2C bus bit rate Low reg. */
+#define	RIICx_BRH		(0x38)		/* I2C bus bit rate High reg. */
+#define	RIICx_DRT		(0x3C)		/* I2C bus transmit data reg. */
+#define	RIICx_DRR		(0x40)		/* I2C bus receive data reg. */
+
+#define	RIIC_CR1_ICE		(1<<7)	
+#define	RIIC_CR1_RST		(1<<6)
+#define	RIIC_CR1_SOWP		(1<<4)
+
+#define	RIIC_CR2_BBSY		(1<<7)
+#define	RIIC_CR2_ST		(1<<1)
+#define	RIIC_CR2_RS		(1<<2)
+#define	RIIC_CR2_SP		(1<<3)
+
+#define RIIC_MR3_WAIT		(1<<6)
+#define RIIC_MR3_ACKWP		(1<<4)
+#define RIIC_MR3_ACKBT		(1<<3)
+
+#define	RIIC_IER_TIE		(1<<7)
+#define	RIIC_IER_TEIE		(1<<6)
+#define	RIIC_IER_RIE		(1<<5)
+#define	RIIC_IER_NAKIE		(1<<4)
+#define	RIIC_IER_SPIE		(1<<3)
+#define	RIIC_IER_STIE		(1<<2)
+#define	RIIC_IER_ALIE		(1<<1)
+#define	RIIC_IER_TMOIE		(1<<0)
+
+#define RIIC_SR2_TDRE		(1<<7)
+#define RIIC_SR2_TEND		(1<<6)
+#define RIIC_SR2_RDRF		(1<<5)
+#define RIIC_SR2_NACKF		(1<<4)
+#define RIIC_SR2_STOP		(1<<3)
+#define RIIC_SR2_START		(1<<2)
+#define RIIC_SR2_AL		(1<<1)
+#define RIIC_SR2_TMOF		(1<<0)
+
+#define RIIC_FER_TMOE		(1<<0)
+
+/* Register initial value */
+#define	RIIC_MR1_INI		(1<<4)
+
+/* 
+ * I2C interrupt number
+	*/
+#define	INTNO_RIIC_TEI0		264		// Transmit end interrupt
+#define	INTNO_RIIC_RI0		265		// Receive data full interrupt
+#define	INTNO_RIIC_TI0		266		// Transmit data empty interrupt
+#define	INTNO_RIIC_SPI0		267		// STOP condition detection interrupt
+#define	INTNO_RIIC_STI0		268		// START condition detection interrupt
+#define	INTNO_RIIC_NAKI0	269		// NACK reception interrupt
+#define	INTNO_RIIC_ALI0		270		// Abitration lost interrupt
+#define	INTNO_RIIC_TMOI0	271		// Time out interrupt
+
+#define	INTNO_RIIC_TEI1		272		// Transmit end interrupt
+#define	INTNO_RIIC_RI1		273		// Receive data full interrupt
+#define	INTNO_RIIC_TI1		274		// Transmit data empty interrupt
+#define	INTNO_RIIC_SPI1		275		// STOP condition detection interrupt
+#define	INTNO_RIIC_STI1		276		// START condition detection interrupt
+#define	INTNO_RIIC_NAKI1	277		// NACK reception interrupt
+#define	INTNO_RIIC_ALI1		278		// Abitration lost interrupt
+#define	INTNO_RIIC_TMOI1	279		// Time out interrupt
+
+#define	INTNO_RIIC_TEI2		280		// Transmit end interrupt
+#define	INTNO_RIIC_RI2		281		// Receive data full interrupt
+#define	INTNO_RIIC_TI2		282		// Transmit data empty interrupt
+#define	INTNO_RIIC_SPI2		283		// STOP condition detection interrupt
+#define	INTNO_RIIC_STI2		284		// START condition detection interrupt
+#define	INTNO_RIIC_NAKI2	285		// NACK reception interrupt
+#define	INTNO_RIIC_ALI2		286		// Abitration lost interrupt
+#define	INTNO_RIIC_TMOI2	287		// Time out interrupt
+
+#define	INTNO_RIIC_TEI3		288		// Transmit end interrupt
+#define	INTNO_RIIC_RI3		289		// Receive data full interrupt
+#define	INTNO_RIIC_TI3		290		// Transmit data empty interrupt
+#define	INTNO_RIIC_SPI3		291		// STOP condition detection interrupt
+#define	INTNO_RIIC_STI3		292		// START condition detection interrupt
+#define	INTNO_RIIC_NAKI3	293		// NACK reception interrupt
+#define	INTNO_RIIC_ALI3		294		// Abitration lost interrupt
+#define	INTNO_RIIC_TMOI3	295		// Time out interrupt
+
+#endif	/* __DEV_I2C_RZA2M_H__ */
+=== device/i2c/sysdepend/stm32h7/i2c_cnf_sysdep.h
+﻿/*
+ *----------------------------------------------------------------------
+ *    Device Driver for μT-Kernel 3.0
+ *
+ *    Copyright (C) 2022 by Ken Sakamura.
+ *    This software is distributed under the T-License 2.2.
+ *----------------------------------------------------------------------
+ *
+ *    Released by TRON Forum(http://www.tron.org) at 2022/02
+ *
+ *----------------------------------------------------------------------
+ */
+
+/*
+ *	i2c_cnf_sysdep.h 
+ *	I2C device configuration file
+ *		for STM32H7
+ */
+#ifndef	__DEV_I2C_CNF_STM32H7_H__
+#define	__DEV_I2C_CNF_STM32H7_H__
+
+/* Device initialization */
+#define DEVCONF_I2C_INIT_MCLK	TRUE	// Initialize module clock
+
+/* ADC Clock (I2C) */
+#define	DEVCNF_I2CSEL		0	// I2C clock source  0 = PCLK1
+
+/* Register initial value */
+#define	I2C_TIMINGR_INIT	0x60404E72	// Standard mode, 100KHz
+
+
+// Interrupt priority
+#define	DEVCNF_I2C1_INTPRI	5
+#define	DEVCNF_I2C2_INTPRI	5
+#define	DEVCNF_I2C3_INTPRI	5
+#define	DEVCNF_I2C4_INTPRI	5
+#define	DEVCNF_I2C5_INTPRI	5
+
+/* Communication timeout time */
+#define	DEVCNF_I2C1_TMO		1000
+#define	DEVCNF_I2C2_TMO		1000
+#define	DEVCNF_I2C3_TMO		1000
+#define	DEVCNF_I2C4_TMO		1000
+#define	DEVCNF_I2C5_TMO		1000
+
+
+#endif		/* __DEV_I2C_CNF_STM32H7_H__ */
+=== device/i2c/sysdepend/stm32h7/i2c_sysdep.h
+﻿/*
+ *----------------------------------------------------------------------
+ *    Device Driver for μT-Kernel 3.0
+ *
+ *    Copyright (C) 2022 by Ken Sakamura.
+ *    This software is distributed under the T-License 2.2.
+ *----------------------------------------------------------------------
+ *
+ *    Released by TRON Forum(http://www.tron.org) at 2022/02.
+ *
+ *----------------------------------------------------------------------
+ */
+
+/*
+ *	i2c_sysdep.h
+ *	I2C device driver
+ *	System-dependent definition for STM32H7
+ */
+
+#ifndef	__DEV_I2C_STM32H7_H__
+#define	__DEV_I2C_STM32H7_H__
+
+#define	DEV_I2C_UNITNM		(5)	/* Number of devive units */
+#define	DEV_I2C_1		(0)	/* I2C1 */
+#define	DEV_I2C_2		(1)	/* I2C2 */
+#define	DEV_I2C_3		(2)	/* I2C3 */
+#define	DEV_I2C_4		(3)	/* I2C4 */
+#define	DEV_I2C_5		(4)	/* I2C5 */
+
+/* I2C device driver operating state */
+#define	I2C_STS_START		0x0000
+#define	I2C_STS_RESTART		0x0001
+#define	I2C_STS_STOP		0x0003
+#define	I2C_STS_SEND		0x0004
+#define	I2C_STS_RECV		0x0005
+#define	I2C_STS_TOP		0x8000
+
+/*
+ * RCC registers ( I2C Clock setting )
+ */
+
+/*----------------------------------------------------------------------
+ * I2C registers
+ */
+
+/* Base address */
+#define	I2C1_BASE		0x40005400
+#define	I2C2_BASE		0x40005800
+#define	I2C3_BASE		0x40005C00
+#define	I2C4_BASE		0x58001C00
+#define	I2C5_BASE		0x40006400
+
+/* Register offset */
+#define	I2Cx_CR1		(0x00)		// Control register 1
+#define	I2Cx_CR2		(0x04)		// Control register 2
+#define	I2Cx_OAR1		(0x08)		// Own adress 1 register
+#define	I2Cx_OAR2		(0x0C)		// Own adress 2 register
+#define	I2Cx_TIMINGR		(0x10)		// Timing register
+#define	I2Cx_TIMEOUTR		(0x14)		// Timeout register
+#define	I2Cx_ISR		(0x18)		// Interrupt & status register
+#define	I2Cx_ICR		(0x1C)		// Interrupt clear register
+#define	I2Cx_PECR		(0x20)		// reserve
+#define	I2Cx_RXDR		(0x24)		// Receive data register
+#define	I2Cx_TXDR		(0x28)		// Transmission data register
+
+#define I2C_CR1_PE		(1<<0)		// Peripheral enable
+#define	I2C_CR1_TXIE		(1<<1)		// TX interrupt enable
+#define	I2C_CR1_RXIE		(1<<2)		// RX interrupt enable
+#define	I2C_CR1_NACKIE		(1<<4)		// NACK interrupt enable
+#define	I2C_CR1_STOPIE		(1<<5)		// STOP interrupt enable
+#define	I2C_CR1_TCIE		(1<<6)		// Transfer complete interrupt enable
+#define	I2C_CR1_ERRIE		(1<<7)		// Error interrupt enable
+
+#define	I2C_CR2_RD_WRN		(1<<10)		// Communication direction
+#define	I2C_CR2_START		(1<<13)		// START
+#define	I2C_CR2_AUTOEND		(1<<25)		// Auto end mode
+
+#define	I2C_ISR_TXE		(1<<0)		// Transfer data empty
+#define	I2C_ISR_TXIS		(1<<1)		// Transfer interrupt
+#define	I2C_ISR_RXNE		(1<<2)		// Receive data not empty
+#define	I2C_ISR_NACKF		(1<<4)		// NACK interrupt
+#define	I2C_ISR_STOPF		(1<<5)		// STOP interrupt
+#define	I2C_ISR_TC		(1<<6)		// Transfer complete interrupt
+#define	I2C_ISR_TCR		(1<<7)		// Transfer complete & reload
+#define	I2C_ISR_BUSY		(1<<15)		// Bus busy
+
+#define	I2C_ICR_ALL		(0x00003F38)	// All flag clear
+
+/* 
+ * I2C interrupt number
+  */
+#define	INTNO_I2C1_EV		31		// I2C1 event interrupt
+#define	ININO_I2C1_ER		32		// I2C1 error interrupt
+
+#define	INTNO_I2C2_EV		33		// I2C2 event interrupt
+#define	ININO_I2C2_ER		34		// I2C2 error interrupt
+
+#define	INTNO_I2C3_EV		72		// I2C3 event interrupt
+#define	ININO_I2C3_ER		73		// I2C3 error interrupt
+
+#define	INTNO_I2C4_EV		95		// I2C4 event interrupt
+#define	ININO_I2C4_ER		96		// I2C4 error interrupt
+
+#define	INTNO_I2C5_EV		157		// I2C5 event interrupt
+#define	ININO_I2C5_ER		158		// I2C5 error interrupt
+
+#endif		/* __DEV_I2C_STM32H7_H__ */
+=== device/i2c/sysdepend/stm32l4/i2c_cnf_sysdep.h
+﻿/*
+ *----------------------------------------------------------------------
+ *    Device Driver for μT-Kernel 3.0
+ *
+ *    Copyright (C) 2020-2022 by Ken Sakamura.
+ *    This software is distributed under the T-License 2.2.
+ *----------------------------------------------------------------------
+ *
+ *    Released by TRON Forum(http://www.tron.org) at 2022/02.
+ *
+ *----------------------------------------------------------------------
+ */
+
+
+/*
+ *	i2c_cnf_sysdep.h 
+ *	I2C device configuration file
+ *		for STM32L4
+ */
+#ifndef	__DEV_I2C_CNF_STM32L4_H__
+#define	__DEV_I2C_CNF_STM32L4_H__
+
+/* Device clock initialization */
+#define DEVCNF_I2C_INIT_MCLK		TRUE		// Initialize module clock
+#define	DEVCNF_I2CxSEL_INIT		0x00000000	// All I2C clocks are PCLK (bit 12-17)
+
+/* Register initial value */
+#define	I2C_TIMINGR_INIT		0x10909CEC	// Standard mode, 100KHz
+//#define	I2C_TIMINGR_INIT	0x00702991	// Fast mode, 400KHz
+
+// Interrupt priority
+#define	DEVCNF_I2C1_INTPRI	5
+#define	DEVCNF_I2C2_INTPRI	5
+#define	DEVCNF_I2C3_INTPRI	5
+
+/* Communication timeout time */
+#define	DEVCNF_I2C1_TMO		1000
+#define	DEVCNF_I2C2_TMO		1000
+#define	DEVCNF_I2C3_TMO		1000
+
+
+#endif		/* __DEV_I2C_CNF_STM32L4_H__ */
+=== device/i2c/sysdepend/stm32l4/i2c_sysdep.h
+﻿/*
+ *----------------------------------------------------------------------
+ *    Device Driver for μT-Kernel 3.0
+ *
+ *    Copyright (C) 2020-2022 by Ken Sakamura.
+ *    This software is distributed under the T-License 2.2.
+ *----------------------------------------------------------------------
+ *
+ *    Released by TRON Forum(http://www.tron.org) at 2022/02.
+ *
+ *----------------------------------------------------------------------
+ */
+
+/*
+ *	i2c_sysdep.h
+ *	I2C device driver
+ *	System-dependent definition for STM32L4
+ */
+
+#ifndef	__DEV_I2C_STM32L4_H__
+#define	__DEV_I2C_STM32L4_H__
+
+#define	DEV_I2C_UNITNM		(3)	/* Number of devive units */
+#define	DEV_I2C_1		(0)	/* I2C1 */
+#define	DEV_I2C_2		(1)	/* I2C2 */
+#define	DEV_I2C_3		(2)	/* I2C3 */
+
+/* I2C device driver operating state */
+#define	I2C_STS_START		0x0000
+#define	I2C_STS_RESTART		0x0001
+#define	I2C_STS_STOP		0x0003
+#define	I2C_STS_SEND		0x0004
+#define	I2C_STS_RECV		0x0005
+#define	I2C_STS_TOP		0x8000
+
+/*
+ * RCC registers ( I2C Clock setting )
+ */
+#define	RCC_CCIPR_I2CSEL	0x00003000	// I2C Clock source
+
+/*----------------------------------------------------------------------
+ * I2C registers
+ */
+
+/* Base address */
+#define	I2C1_BASE		0x40005400
+#define	I2C2_BASE		0x40005800
+#define	I2C3_BASE		0x40005C00
+
+/* Register offset */
+#define	I2Cx_CR1		(0x00)		// Control register 1
+#define	I2Cx_CR2		(0x04)		// Control register 2
+#define	I2Cx_OAR1		(0x08)		// Own adress 1 register
+#define	I2Cx_OAR2		(0x0C)		// Own adress 2 register
+#define	I2Cx_TIMINGR		(0x10)		// Timing register
+#define	I2Cx_TIMEOUTR		(0x14)		// Timeout register
+#define	I2Cx_ISR		(0x18)		// Interrupt & status register
+#define	I2Cx_ICR		(0x1C)		// Interrupt clear register
+#define	I2Cx_PECR		(0x20)		// reserve
+#define	I2Cx_RXDR		(0x24)		// Receive data register
+#define	I2Cx_TXDR		(0x28)		// Transmission data register
+
+#define I2C_CR1_PE		(1<<0)		// Peripheral enable
+#define	I2C_CR1_TXIE		(1<<1)		// TX interrupt enable
+#define	I2C_CR1_RXIE		(1<<2)		// RX interrupt enable
+#define	I2C_CR1_NACKIE		(1<<4)		// NACK interrupt enable
+#define	I2C_CR1_STOPIE		(1<<5)		// STOP interrupt enable
+#define	I2C_CR1_TCIE		(1<<6)		// Transfer complete interrupt enable
+#define	I2C_CR1_ERRIE		(1<<7)		// Error interrupt enable
+
+#define	I2C_CR2_RD_WRN		(1<<10)		// Communication direction
+#define	I2C_CR2_START		(1<<13)		// START
+#define	I2C_CR2_AUTOEND		(1<<25)		// Auto end mode
+
+#define	I2C_ISR_TXE		(1<<0)		// Transfer data empty
+#define	I2C_ISR_TXIS		(1<<1)		// Transfer interrupt
+#define	I2C_ISR_RXNE		(1<<2)		// Receive data not empty
+#define	I2C_ISR_NACKF		(1<<4)		// NACK interrupt
+#define	I2C_ISR_STOPF		(1<<5)		// STOP interrupt
+#define	I2C_ISR_TC		(1<<6)		// Transfer complete interrupt
+#define	I2C_ISR_TCR		(1<<7)		// Transfer complete & reload
+#define	I2C_ISR_BUSY		(1<<15)		// Bus busy
+
+#define	I2C_ICR_ALL		(0x00003F38)	// All flag clear
+
+/* 
+ * I2C interrupt number
+  */
+#define	INTNO_I2C1_EV		31		// I2C1 event interrupt
+#define	ININO_I2C1_ER		32		// I2C1 error interrupt
+
+#define	INTNO_I2C2_EV		33		// I2C2 event interrupt
+#define	ININO_I2C2_ER		34		// I2C2 error interrupt
+
+#define	INTNO_I2C3_EV		72		// I2C3 event interrupt
+#define	ININO_I2C3_ER		73		// I2C3 error interrupt
+
+#endif		/* __DEV_I2C_STM32L4_H__ */
+=== device/i2c/sysdepend/tx03_m367/i2c_cnf_sysdep.h
+﻿/*
+ *----------------------------------------------------------------------
+ *    Device Driver for μT-Kernel 3.0
+ *
+ *    Copyright (C) 2020-2022 by Ken Sakamura.
+ *    This software is distributed under the T-License 2.2.
+ *----------------------------------------------------------------------
+ *
+ *    Released by TRON Forum(http://www.tron.org) at 2022/02.
+ *
+ *----------------------------------------------------------------------
+ */
+
+
+/*
+ *	i2c_cnf_sysdep.h 
+ *	I2C device configuration file
+ *		for TX03_M367 (TMPM369FDFG)
+ */
+#ifndef	__DEV_I2C_CNF_M367_H__
+#define	__DEV_I2C_CNF_M367_H__
+
+/* Frequency selection (0-6)  SBIxCR1.SCK */
+#define	DEVCNF_I2C0_SCK		0
+#define	DEVCNF_I2C1_SCK		0
+#define	DEVCNF_I2C2_SCK		0
+
+// Interrupt priority
+#define	DEVCNF_I2C0_INTPRI	5
+#define	DEVCNF_I2C1_INTPRI	5
+#define	DEVCNF_I2C2_INTPRI	5
+
+/* Communication timeout time */
+#define	DEVCNF_I2C0_TMO		1000
+#define	DEVCNF_I2C1_TMO		1000
+#define	DEVCNF_I2C2_TMO		1000
+
+
+#endif		/* __DEV_I2C_CNF_M367_H__ */
+=== device/i2c/sysdepend/tx03_m367/i2c_sysdep.h
+﻿/*
+ *----------------------------------------------------------------------
+ *    Device Driver for μT-Kernel 3.0
+ *
+ *    Copyright (C) 2020-2022 by Ken Sakamura.
+ *    This software is distributed under the T-License 2.2.
+ *----------------------------------------------------------------------
+ *
+ *    Released by TRON Forum(http://www.tron.org) at 2022/02.
+ *
+ *----------------------------------------------------------------------
+ */
+
+/*
+ *	i2c_sysdep.h
+ *	I2C device driver
+ *	System-dependent definition for TX03_M367
+ */
+
+#ifndef	__DEV_I2C_M367_H__
+#define	__DEV_I2C_M367_H__
+
+#define	DEV_I2C_UNITNM		(3)	/* Number of devive units */
+
+/* I2C device driver operating state */
+#define	I2C_STS_START		0x0000
+#define	I2C_STS_RESTART		0x0001
+#define	I2C_STS_STOP		0x0003
+#define	I2C_STS_SEND		0x0004
+#define	I2C_STS_RECV		0x0005
+#define	I2C_STS_TOP		0x8000
+
+/*----------------------------------------------------------------------
+ * I2C registers
+ */
+#define	I2C0_BASE		(0x400E0000UL)
+#define	I2C1_BASE		(0x400E0100UL)
+#define	I2C2_BASE		(0x400E0200UL)
+
+#define	I2C_SBIxCR0		0x0000		/* RW Control register 0 */
+#define	I2C_SBIxCR1		0x0004		/* RW Control register 1 */
+#define	I2C_SBIxDBR		0x0008		/* RW Data buffer register */
+#define	I2C_SBIxI2CAR		0x000C		/* RW I2C bus address register */
+#define	I2C_SBIxCR2		0x0010		/* W  Control register 2 */
+#define	I2C_SBIxSR		0x0010		/* R  Status register */
+#define	I2C_SBIxBR0		0x0014		/* RW Baud rate register 0 */
+
+/* Control register 0 - Bit definition */
+#define	I2C_SBIxCR0_SBIEN	(1 << 7)	/* RW Serial bus interface enable */
+
+/* Control register 1 - Bit definition */
+#define	I2C_SBIxCR1_BC(n)	((n) << 5)	/* RW Selection of transfer bit number */
+#define	I2C_SBIxCR1_ACK		(1 << 4)	/* RW ACK */
+#define	I2C_SBIxCR1_SCK(n)	((n) << 0)	/* W  Output clock frequency selection */
+#define	I2C_SBIxCR1_SWRMON	(1 << 0)	/* R  Software reset status moitor */
+
+/* Control register 2 - Bit definition */
+#define	I2C_SBIxCR2_MST		(1 << 7)	/* W Master / Slave mode Selection */
+#define	I2C_SBIxCR2_TRX		(1 << 6)	/* W Send / Receive selection */
+#define	I2C_SBIxCR2_BB		(1 << 5)	/* W Generation of start / stop condition */
+#define	I2C_SBIxCR2_PIN		(1 << 4)	/* W INTSBIx Release interrupt request */
+#define	I2C_SBIxCR2_SBIM(n)	((n) << 2)	/* W Select operating mode of serial bus interface */
+#define	I2C_SBIxCR2_SBIM_SIO	I2C_SBIxCR2_SBIM(1)
+#define	I2C_SBIxCR2_SBIM_I2C	I2C_SBIxCR2_SBIM(2)
+#define	I2C_SBIxCR2_SWRST(n)	((n) << 0)	/* W Occurrence of software reset */
+
+/* Status register 0 Bit definition */
+#define	I2C_SBIxSR_MST		(1 << 7)	/* R Master / slave selection */
+#define	I2C_SBIxSR_TRX		(1 << 6)	/* R Transmitter / receiver selection status */
+#define	I2C_SBIxSR_BB		(1 << 5)	/* R I2C Bus state */
+#define	I2C_SBIxSR_PIN		(1 << 4)	/* R INTSBIx Interrupt request status */
+#define	I2C_SBIxSR_AL		(1 << 3)	/* R Arbitration lost detection */
+#define	I2C_SBIxSR_AAS		(1 << 2)	/* R Slave address match detection */
+#define	I2C_SBIxSR_ADO		(1 << 1)	/* R General call detection */
+#define	I2C_SBIxSR_LRB		(1 << 0)	/* R Last received bit */
+
+/* Baud rate register 0 Bit definition */
+#define	I2C_SBIxBR0_I2SBI	(1 << 6)	/* RW IDLE mode */
+/* 
+ * I2C interrupt number
+  */
+#define	INTNO_INTSBI(n)		(26 + (n))	/* n=0～2 : I2C/SIO */
+
+/*
+ * I2C/SIO setting value
+ */
+#define	I2C_SBIxCR1_INIT	(	\
+		I2C_SBIxCR1_BC(0) |	\
+		I2C_SBIxCR1_ACK 	)
+
+#define	I2C_SBIxCR2_START	(	\
+		I2C_SBIxCR2_SBIM_I2C |	\
+		I2C_SBIxCR2_MST |	\
+		I2C_SBIxCR2_TRX |	\
+		I2C_SBIxCR2_BB |	\
+		I2C_SBIxCR2_PIN		)
+
+#define	I2C_SBIxCR2_RESTART	(	\
+		I2C_SBIxCR2_SBIM_I2C |	\
+		I2C_SBIxCR2_PIN		)
+
+#define	I2C_SBIxCR2_STOP	(	\
+		I2C_SBIxCR2_SBIM_I2C |	\
+		I2C_SBIxCR2_MST |	\
+		I2C_SBIxCR2_TRX |	\
+		I2C_SBIxCR2_PIN		)
+
+#endif		/* __DEV_I2C_M367_H__ */
+=== device/adc/sysdepend/rp2040/adc_cnf_sysdep.h
+﻿/*
+ *----------------------------------------------------------------------
+ *    Device Driver for μT-Kernel 3.0
+ *
+ *    Copyright (C) 2022-2023 by Ken Sakamura.
+ *    This software is distributed under the T-License 2.2.
+ *----------------------------------------------------------------------
+ *
+ *    Released by TRON Forum(http://www.tron.org) at 2023/05.
+ *
+ *----------------------------------------------------------------------
+ */
+
+/*
+ *	adc_cnf_sysdep.h 
+ *	A/D converter device driver configuration file
+ *		for RP2040
+ */
+#ifndef	__DEV_ADC_CNF_RP2040_H__
+#define	__DEV_ADC_CNF_RP2040_H__
+
+/* 
+ * Release A/DC reset
+ *	Enable when not performed in the OS initialization process.
+ */
+#define	DEVCONF_ADC_REL_RESET	FALSE
+
+/*
+ * Device control data
+ */
+#define	ADC_DIV_INI		0	// Clock divider
+
+/* 
+ * Initialize analog input pins
+ *	The kernel does not set up any ADC pin at boot.  Set the flag to TRUE
+ *	for each channel you use: the driver then makes that pin an analog
+ *	input (digital input and pulls off) when it starts.  Record the pin
+ *	in TEAM.md.
+ *	  channel 0 = GP26, channel 1 = GP27, channel 2 = GP28
+ *	  channel 3 = GP29 is the Pico W RADIO CLOCK: never set _3 to TRUE.
+ */
+#define	DEVCONF_ADC_PIN_INIT_0	FALSE
+#define	DEVCONF_ADC_PIN_INIT_1	FALSE
+#define	DEVCONF_ADC_PIN_INIT_2	FALSE
+#define	DEVCONF_ADC_PIN_INIT_3	FALSE
+
+/* Interrupt t priority */
+#define	DEVCNF_ADC_INTPRI	2
+
+/* A/D conversion timeout time */
+#define	DEVCNF_ADC_TMOSCAN	1000
+
+#endif		/* __DEV_ADC_CNF_RP2040_H__ */
+=== device/adc/sysdepend/rp2040/adc_sysdep.h
+﻿/*
+ *----------------------------------------------------------------------
+ *    Device Driver for μT-Kernel 3.0
+ *
+ *    Copyright (C) 2021-2022 by Ken Sakamura.
+ *    This software is distributed under the T-License 2.2.
+ *----------------------------------------------------------------------
+ *
+ *    Released by TRON Forum(http://www.tron.org) at 2022/11.
+ *
+ *----------------------------------------------------------------------
+ */
+
+/*
+ *	adc_sysdep.h
+ *	A/D converter device driver
+ *	System-dependent definition for RP2040
+ */
+
+#ifndef	__DEV_ADC_RP2040_H__
+#define	__DEV_ADC_RP2040_H__
+
+#define	DEV_ADC_UNITNM	(1)	/* Number of devive units */
+
+/* NUmber of A/DC chanels */
+#define	ADC_CH_NUM	(5)
+
+
+/*----------------------------------------------------------------------
+ * A/DC registers
+ */
+
+#define ADC_BASE		(0x4004C000)
+
+#define	ADC_CS			(ADC_BASE+0x00)		// ADC Control and Status
+#define	ADC_RESULT		(ADC_BASE+0x04)		// Result of most recent ADC conversion
+#define	ADC_FCS			(ADC_BASE+0x08)		// FIFO control and status
+#define	ADC_FIFO		(ADC_BASE+0x0C)		// Conversion result FIFO
+#define	ADC_DIV			(ADC_BASE+0x10)		// Clock divider
+#define	ADC_INTR		(ADC_BASE+0x14)		// Raw Interrupts
+#define	ADC_INTE		(ADC_BASE+0x18)		// Interrupt Enable
+#define	ADC_INTF		(ADC_BASE+0x1C)		// Interrupt Force
+#define	ADC_INTS		(ADC_BASE+0x20)		// Interrupt status after masking & forcing
+
+#define	ADC_CS_EN		(1<<0)			// Power on ADC and enable its clock.
+#define	ADC_CS_TS_EN		(1<<1)			// Power on temperature sensor.
+#define	ADC_CS_STRAT_ONCE	(1<<2)			// Start a single conversion.
+#define	ADC_CS_START_MANY	(1<<3)			// Continuously perform conversions.
+#define	ADC_CS_READY		(1<<8)			// ADC is ready to start a new conversion.
+#define	ADC_CS_ERR		(1<<9)			// The most recent ADC conversion encountered an error.
+#define	ADC_CS_ERR_STICKY	(1<<10)			// Some past ADC conversion encountered an error.
+#define	ADC_CS_AINSEL		(0x00007000)		// Select analog mux input. Updated automatically in roundrobin mode.
+#define	ADC_CS_AINSEL_POS	12
+#define	ADC_CS_RROBIN		(0x001F0000)		// Round-robin sampling.
+
+#define ADC_FCS_THRESH		(0x0F000000)
+#define ADC_FCS_THRESH_POS	24
+#define ADC_FCS_LEVEL		(0x000F0000)
+#define ADC_FCS_EN		1
+/*
+ * A/D converter interrupt number
+*/
+#define	INTNO_ADC		22
+
+#endif		/* __DEV_ADC_RP2040_H__ */
+=== device/adc/sysdepend/rx231/adc_cnf_sysdep.h
+﻿/*
+ *----------------------------------------------------------------------
+ *    Device Driver for μT-Kernel 3.0
+ *
+ *    Copyright (C) 2021-2022 by Ken Sakamura.
+ *    This software is distributed under the T-License 2.2.
+ *----------------------------------------------------------------------
+ *
+ *    Released by TRON Forum(http://www.tron.org) at 2022/02.
+ *
+ *----------------------------------------------------------------------
+ */
+
+
+/*
+ *	adc_cnf_sysdep.h 
+ *	A/D converter device driver configuration file
+ *		for RX231
+ */
+#ifndef	__DEV_ADC_CNF_RX231_H__
+#define	__DEV_ADC_CNF_RX231_H__
+
+/* Device initialization */
+#define DEVCONF_ADC_INIT_MSTP	FALSE		// Initialize module stop
+
+/* Device control data */
+/* Initial sampling rate (ADSSTR) */
+#define	DEVCNF_ADSSTR0_INI	6
+#define	DEVCNF_ADSSTR1_INI	6
+#define	DEVCNF_ADSSTR2_INI	6
+#define	DEVCNF_ADSSTR3_INI	6
+#define	DEVCNF_ADSSTR4_INI	6
+#define	DEVCNF_ADSSTR5_INI	6
+#define	DEVCNF_ADSSTR6_INI	6
+#define	DEVCNF_ADSSTR7_INI	6
+#define	DEVCNF_ADSSTRL_INI	6
+
+#define	DEVCNF_ADC_INTPRI	5	// Interrupt priority
+#define	DEVCNF_ADC_TMOSCAN	1000	// A/D conversion timeout time
+
+#endif		/* __DEV_ADC_CNF_RX231_H__ */
+=== device/adc/sysdepend/rx231/adc_sysdep.h
+﻿/*
+ *----------------------------------------------------------------------
+ *    Device Driver for μT-Kernel 3.0
+ *
+ *    Copyright (C) 2020-2022 by Ken Sakamura.
+ *    This software is distributed under the T-License 2.2.
+ *----------------------------------------------------------------------
+ *
+ *    Released by TRON Forum(http://www.tron.org) at 2022/02.
+ *
+ *----------------------------------------------------------------------
+ */
+
+
+/*
+ *	dev_adc_sydep.h
+ *	A/D converter device driver
+ *	System-dependent definition for RX231
+ */
+
+#ifndef	__DEV_ADC_RX231_H__
+#define	__DEV_ADC_RX231_H__
+
+#define	DEV_ADC_UNITNM	(1)	/* Number of devive units */
+#define	DEV_ADC_UNIT0	(0)
+
+#define ADC_CH_NUM	(24)		/* Number of A/DC chanels */
+
+/*
+ * ADC registers
+ */
+#define	ADCSR		(0x00089000)		/* A/D control reg. */
+#define	ADCSR_ADST	(1<<15)
+#define	ADCSR_ADIE	(1<<12)
+
+#define	ADCER		(0x0008900E)		/* A/D Control extension reg. */
+#define	ADCER_INI	(1<<5)			/* register initial value */
+
+
+#define	ADANSA0		(0x00089004)		/* A/D chanel select reg. A0*/
+#define	ADANSA1		(0x00089006)		/* A/D chanel select reg. A1*/
+#define	ADANSB0		(0x00089014)		/* A/D chanel select reg. B0*/
+#define	ADANSB1		(0x00089016)		/* A/D chanel select reg. B1*/
+
+#define	ADDR(c)		(0x00089020 + 2*c)	/* A/D Data reg. */
+
+/* A/D Sampling state reg. */
+#define	ADSSTRL		(0x000890DD)
+#define	ADSSTRT		(0x000890DE)
+#define	ADSSTRO		(0x000890DF)
+#define	ADSSTR(c)	(0x000890E0 + c)
+
+
+/*
+ * A/D converter interrupt number
+*/
+#define	INTNO_S10ADI0	102
+
+
+#endif		/* __DEV_ADC_RX231_H__ */
+=== device/adc/sysdepend/rx65n/adc_cnf_sysdep.h
+﻿/*
+ *----------------------------------------------------------------------
+ *    Device Driver for μT-Kernel 3.0
+ *
+ *    Copyright (C) 2021-2022 by Ken Sakamura.
+ *    This software is distributed under the T-License 2.2.
+ *----------------------------------------------------------------------
+ *
+ *    Released by TRON Forum(http://www.tron.org) at 2022/04.
+ *
+ *----------------------------------------------------------------------
+ */
+
+/*
+ *	adc_cnf_sysdep.h 
+ *	A/D converter device driver configuration file
+ *		for RX65N
+ */
+#ifndef	__DEV_ADC_CNF_RX65N_H__
+#define	__DEV_ADC_CNF_RX65N_H__
+
+/* Device initialization */
+#define DEVCONF_ADC_INIT_MSTP	FALSE		// Initialize module stop
+#define	DEVCONF_ADC_SET_PERI	TRUE		// Set Software Configurable Interrupt
+
+/* Device control data */
+/* Initial sampling rate (ADSSTR) */
+#define	DEVCNF_ADC0_ADSSTR0_INI		11
+#define	DEVCNF_ADC0_ADSSTR1_INI		11
+#define	DEVCNF_ADC0_ADSSTR2_INI		11
+#define	DEVCNF_ADC0_ADSSTR3_INI		11
+#define	DEVCNF_ADC0_ADSSTR4_INI		11
+#define	DEVCNF_ADC0_ADSSTR5_INI		11
+#define	DEVCNF_ADC0_ADSSTR6_INI		11
+#define	DEVCNF_ADC0_ADSSTR7_INI		11
+
+#define	DEVCNF_ADC1_ADSSTR0_INI		11
+#define	DEVCNF_ADC1_ADSSTR1_INI		11
+#define	DEVCNF_ADC1_ADSSTR2_INI		11
+#define	DEVCNF_ADC1_ADSSTR3_INI		11
+#define	DEVCNF_ADC1_ADSSTR4_INI		11
+#define	DEVCNF_ADC1_ADSSTR5_INI		11
+#define	DEVCNF_ADC1_ADSSTR6_INI		11
+#define	DEVCNF_ADC1_ADSSTR7_INI		11
+#define	DEVCNF_ADC1_ADSSTR8_INI		11
+#define	DEVCNF_ADC1_ADSSTR9_INI		11
+#define	DEVCNF_ADC1_ADSSTR10_INI	11
+#define	DEVCNF_ADC1_ADSSTR11_INI	11
+#define	DEVCNF_ADC1_ADSSTR12_INI	11
+#define	DEVCNF_ADC1_ADSSTR13_INI	11
+#define	DEVCNF_ADC1_ADSSTR14_INI	11
+#define	DEVCNF_ADC1_ADSSTR15_INI	11
+
+#define	DEVCNF_ADC1_ADSSTRL_INI		11
+#define	DEVCNF_ADC1_ADSSTRT_INI		11
+#define	DEVCNF_ADC1_ADSSTRO_INI		11
+
+/*
+ * A/D converter interrupt number
+ *	Can be set between INTB128 and INTB207
+*/
+#define	INTNO_S12ADI0		130
+#define	INTNO_S12ADI1		131
+
+#define	DEVCNF_ADC0_INTPRI	5	// Interrupt priority
+#define	DEVCNF_ADC1_INTPRI	5	// Interrupt priority
+
+#define	DEVCNF_ADC_TMOSCAN	1000	// A/D conversion timeout time
+
+#endif		/* __DEV_ADC_CNF_RX65N_H__ */
+=== device/adc/sysdepend/rx65n/adc_sysdep.h
+﻿/*
+ *----------------------------------------------------------------------
+ *    Device Driver for μT-Kernel 3.0
+ *
+ *    Copyright (C) 2020-2022 by Ken Sakamura.
+ *    This software is distributed under the T-License 2.2.
+ *----------------------------------------------------------------------
+ *
+ *    Released by TRON Forum(http://www.tron.org) at 2022/04.
+ *
+ *----------------------------------------------------------------------
+ */
+
+
+/*
+ *	dev_adc_sydep.h
+ *	A/D converter device driver
+ *	System-dependent definition for RX65N
+ */
+
+#ifndef	__DEV_ADC_RX65N_H__
+#define	__DEV_ADC_RX65N_H__
+
+#define	DEV_ADC_UNITNM	(2)	/* Number of devive units */
+#define	DEV_ADC_UNIT0	(0)
+#define	DEV_ADC_UNIT1	(1)
+
+#define ADC_CH_NUM0	(8)		/* Number of A/DC chanels */
+#define ADC_CH_NUM1	(21)
+
+/*
+ * ADC registers
+ */
+
+/* Base address */
+#define ADC0_BASE	(0x00089000UL)
+#define ADC1_BASE	(0x00089100UL)
+
+/* Register offset */
+#define	ADCx_ADCSR	(0x00)		/* A/DC control reg. */
+#define	ADCSR_ADST	(1<<15)
+#define	ADCSR_ADIE	(1<<12)
+
+#define	ADCx_ADANSA0	(0x04)		/* A/DC chanel select reg. A0*/
+#define	ADCx_ADANSA1	(0x06)		/* A/DC chanel select reg. A1*/
+#define	ADCx_ADCER	(0x0E)		/* A/DC Control extension reg. */
+#define	ADCx_ADANSB0	(0x14)		/* A/DC chanel select reg. B0*/
+#define	ADCx_ADANSB1	(0x16)		/* A/DC chanel select reg. B1*/
+
+#define	ADCx_ADDR(c)	(0x20+(2*c))	/* A/DC Data reg. */
+
+#define	ADCER_INI	(1<<5)		/* register initial value */
+
+#define	ADCx_ADSSTR(c)	(0xE0+c)	/* A/D Sampling state reg. */
+#define	ADC_ADSSTRL	(0x000891DDUL)
+#define	ADC_ADSSTRT	(0x000891DEUL)
+#define	ADC_ADSSTRO	(0x000891DFUL)
+
+/*
+ * A/D converter interrupt factor number
+*/
+#define	INTFN_S12ADI0	64
+#define	INTFN_S12GBADI0	65
+#define	INTFN_S12GCADI0	66
+
+#define	INTFN_S12ADI1	68
+#define	INTFN_S12GBADI1	69
+#define	INTFN_S12GCADI1	70
+
+#endif		/* __DEV_ADC_RX65N_H__ */
+=== device/adc/sysdepend/rza2m/adc_cnf_sysdep.h
+﻿/*
+ *----------------------------------------------------------------------
+ *    Device Driver for μT-Kernel 3.0
+ *
+ *    Copyright (C) 2021-2022 by Ken Sakamura.
+ *    This software is distributed under the T-License 2.2.
+ *----------------------------------------------------------------------
+ *
+ *    Released by TRON Forum(http://www.tron.org) at 2022/02.
+ *
+ *----------------------------------------------------------------------
+ */
+
+
+/*
+ *	adc_cnf_sysdep.h 
+ *	A/D converter device driver configuration file
+ *		for RZ/A2M
+ */
+#ifndef	__DEV_ADC_CNF_RZA2M_H__
+#define	__DEV_ADC_CNF_RZA2M_H__
+
+/* Device initialization */
+#define DEVCONF_ADC_INIT_MSTP	FALSE		// Initialize module stop
+
+/* Device control data */
+/* Initial sampling rate (ADSSTR) */
+#define	DEVCNF_ADSSTR0_INI	11
+#define	DEVCNF_ADSSTR1_INI	11
+#define	DEVCNF_ADSSTR2_INI	11
+#define	DEVCNF_ADSSTR3_INI	11
+#define	DEVCNF_ADSSTR4_INI	11
+#define	DEVCNF_ADSSTR5_INI	11
+#define	DEVCNF_ADSSTR6_INI	11
+#define	DEVCNF_ADSSTR7_INI	11
+
+#define	DEVCNF_ADC_INTPRI	5	// Interrupt priority
+#define	DEVCNF_ADC_TMOSCAN	1000	// A/D conversion timeout time
+
+#endif		/* __DEV_ADC_CNF_RZA2M_H__ */
+=== device/adc/sysdepend/rza2m/adc_sysdep.h
+﻿/*
+ *----------------------------------------------------------------------
+ *    Device Driver for μT-Kernel 3.0
+ *
+ *    Copyright (C) 2021-2022 by Ken Sakamura.
+ *    This software is distributed under the T-License 2.2.
+ *----------------------------------------------------------------------
+ *
+ *    Released by TRON Forum(http://www.tron.org) at 2022/02.
+ *
+ *----------------------------------------------------------------------
+ */
+
+
+/*
+ *	dev_adc_sysdep.h
+ *	A/D converter device driver
+ *	System-dependent definition for RZ/A2M
+ */
+
+#ifndef	__DEV_ADC_RZA2M_H__
+#define	__DEV_ADC_RZA2M_H__
+
+#define	DEV_ADC_UNITNM	(1)		/* Number of devive units */
+#define	DEV_ADC_UNIT0	(0)
+
+#define ADC_CH_NUM	(8)		/* Number of A/DC chanels */
+
+/*
+ * ADC registers
+ */
+#define	ADCSR		(0xE8005800)	// A/D control register
+#define	ADCSR_ADIE	(1<<12)		// Scan end interrupt enabled bit
+#define	ADCSR_ADST	(1<<15)		// A/DC start bit
+#define	ADCSR_INI	(0)		// ADCSR init value (ADC stop, Single scan mode)
+
+#define	ADANSA0		(0xE8005804)
+#define	ADADS0		(0xE8005808)
+#define	ADADC		(0xE800580C)
+#define	ADCER		(0xE800580E)
+#define	ADSTRGR		(0xE8005810)
+#define	ADANSB0		(0xE8005814)
+#define	ADDBLDR		(0xE8005818)
+#define	ADRD		(0xE800581E)
+
+/* A/D dara register ch.0-7 */
+#define	ADDR(c)		(0xE8005820 + (c<<1))
+
+#define	ADDISCR		(0xE800587A)
+
+#define	ADGSPCR		(0xE8005880)
+#define	ADDBLDRA	(0xE8005884)
+#define	ADDBLDRB	(0xE8005886)
+#define	ADWINMON	(0xE800588C)
+
+#define	ADCMPCR		(0xE8005890)
+#define	ADCMPANSR0	(0xE8005894)
+#define	ADCMPLR0	(0xE8005898)
+#define	ADCMPDR0	(0xE800589C)
+#define	ADCMPDR1	(0xE800589E)
+
+#define	ADCMPSR0	(0xE80058A0)
+#define	ADCMPBNSR	(0xE80058A6)
+#define	ADCWINLLB	(0xE80058A8)
+#define	ADCWINLUB	(0xE80058AA)
+#define	ADCMPBSR	(0xE80058AC)
+
+#define	ADANSC0		(0xE80058D4)
+#define	ADGCTRGR	(0xE80058D9)
+
+/* A/D Sampling state register ch.0-7 */
+#define	ADSSTR(c)	(0xE80058E0 + c)
+
+/*
+ * A/D converter interrupt number
+*/
+#define	INTNO_S12ADI0		247
+#define	INTNO_S12GBADI0		248
+#define	INTNO_S12GCADI0		249
+#define	INTNO_S12ADCMPAI0	250
+#define	INTNO_S12ADCMPBI0	251
+
+#endif		/* __DEV_ADC_RZA2M_H__ */
+=== device/adc/sysdepend/stm32h7/adc_cnf_sysdep.h
+﻿/*
+ *----------------------------------------------------------------------
+ *    Device Driver for μT-Kernel 3.0
+ *
+ *    Copyright (C) 2022 by Ken Sakamura.
+ *    This software is distributed under the T-License 2.2.
+ *----------------------------------------------------------------------
+ *
+ *    Released by TRON Forum(http://www.tron.org) at 2022/02.
+ *
+ *----------------------------------------------------------------------
+ */
+
+
+/*
+ *	adc_cnf_sysdep.h 
+ *	A/D converter device driver configuration file
+ *		for STM32H7
+ */
+#ifndef	__DEV_ADC_CNF_STM32H7_H__
+#define	__DEV_ADC_CNF_STM32H7_H__
+
+/* Device initialization */
+#define DEVCNF_ADC_INIT_MCLK	TRUE	// Initialize module clock
+#define	DEVCNF_ADCSEL		0	// ADC clock source   0:PLL2P  1:PLL3R  2: PER_CK
+
+
+/* ADC peripherals clock configuration */
+//#define ADC_PLL2_DIVM2		0	// RCC_PLLCKSELR_DIVM2
+
+//#define ADC_PLL2DIVR_INIT	((1<<24)|(1<<16)|(1<<9)|(23))
+				// PLL2 N = 24	
+				// PLL2 P = 2	
+				// PLL2 Q= 2	
+				// PLL2 R = 2	
+
+//#define ADC_PLL2_RGE		3	// 8 ~ 16 MHz
+//#define ADC_PLL2_VCOSEL		0	// Wide VCO range
+//#define ADC_PLL2_FRACN		0
+
+#define	ADC_PCLK	96000000UL	// 96MHz
+#if (ADC_PCLK/2) <= 6250000UL
+	#define ADC_CR_BOOST_VAL	0
+#elif (ADC_PCLK/2) <= 12500000UL
+	#define ADC_CR_BOOST_VAL	1
+#elif (ADC_PCLK/2) <= 25000000UL
+	#define ADC_CR_BOOST_VAL	2
+#else /* > 25000000UL */
+	#define ADC_CR_BOOST_VAL	3
+#endif
+
+/* Device control data */
+/* Common */
+#define	DEVCNF_ADC12_CKMODE	1	// CKMODE = 1
+#define	DEVCNF_ADC12_PRESC	0	// div 1
+#define	DEVCNF_ADC3_CKMODE	1	// CKMODE = 1
+#define	DEVCNF_ADC3_PRESC	0	// div 1
+
+/* ADC configuration */
+#define DEVCNF_ADC1_CFGR	0x80000000
+#define DEVCNF_ADC2_CFGR	0x80000000
+#define DEVCNF_ADC3_CFGR	0x80000000
+	// CONT   = 0	Single conversion mode
+	// OVRMOD = 0	Overrun Mode 0
+	// RES    = 0	Data resolution 16bit
+	// DISCEN = 0	Discontinuous mode for regular channels disabled
+	// EXTEN  = 0	Hardware trigger detection disabled
+	// AUTDLY = 0	Auto-delayed conversion mode off
+	// DMNGT  = 0	Regular conversion data stored in DR only
+	// AUTDLY = 0	Auto-delayed conversion mode off
+	// DMNGT  = 0	Regular conversion data stored in DR only
+
+#define	DEVCNF_ADC1_CFGR2	0x00000000
+#define	DEVCNF_ADC2_CFGR2	0x00000000
+#define	DEVCNF_ADC3_CFGR2	0x00000000
+	// ROVSE = 0	Regular Oversampling disabled
+	// LSHIFT = 0	No left shift
+
+/* ADC1 */
+#define	DEVCNF_ADC1_SMPR1	0x00000000	// Sampling time (ADC_SMPR1 initial value)
+#define	DEVCNF_ADC1_SMPR2	0x00000000	// Sampling time (ADC_SMPR2 initial value)
+
+/* ADC2 */
+#define	DEVCNF_ADC2_SMPR1	0x00000000	// Sampling time (ADC_SMPR1 initial value)
+#define	DEVCNF_ADC2_SMPR2	0x00000000	// Sampling time (ADC_SMPR2 initial value)
+
+/* ADC3 */
+#define	DEVCNF_ADC3_SMPR1	0x00000000	// Sampling time (ADC_SMPR1 initial value)
+#define	DEVCNF_ADC3_SMPR2	0x00000000	// Sampling time (ADC_SMPR2 initial value)
+
+/* Interrupt t priority */
+#define	DEVCNF_ADC1_2_INTPRI	5
+#define	DEVCNF_ADC3_INTPRI	5
+
+
+/* A/D conversion timeout time */
+#define	DEVCNF_ADC_TMOSCAN	1000
+
+#endif		/* __DEV_ADC_CNF_STM32H7_H__ */
+=== device/adc/sysdepend/stm32h7/adc_sysdep.h
+﻿/*
+ *----------------------------------------------------------------------
+ *    Device Driver for μT-Kernel 3.0
+ *
+ *    Copyright (C) 2022 by Ken Sakamura.
+ *    This software is distributed under the T-License 2.2.
+ *----------------------------------------------------------------------
+ *
+ *    Released by TRON Forum(http://www.tron.org) at 2022/02.
+ *
+ *----------------------------------------------------------------------
+ */
+
+/*
+ *	dev_adc_sysdep.h
+ *	A/D converter device driver
+ *	System-dependent definition for STM32H7
+ */
+
+#ifndef	__DEV_ADC_STM32H7_H__
+#define	__DEV_ADC_STM32H7_H__
+
+#define	DEV_ADC_UNITNM	(3)	/* Number of devive units */
+#define	DEV_ADC_1	(0)	/* ADC1 */
+#define	DEV_ADC_2	(1)	/* ADC2 */
+#define	DEV_ADC_3	(2)	/* ADC3 */
+
+/* NUmber of A/DC chanels */
+#define	ADC_CH_NUM	(20)
+#define	ADC_MAX_SQ	(16)
+
+/*
+ * A/DC Clock source
+ */
+#define	RCC_CCIPR_ADCSEL	0x30000000	// ADC Clock source
+
+/*----------------------------------------------------------------------
+ * A/DC registers
+ */
+
+/* Base address */
+#define ADC1_BASE	(0x40022000UL)	// Master ADC
+#define ADC2_BASE	(0x40022100UL)	// Slave ADC
+#define	ADC12_CBASE	(0x40022300UL)	// Common register
+
+#define	ADC3_BASE	(0x58026000UL)
+#define	ADC3_CBASE	(0x58026300UL)	// Common register
+
+/* Register offset */
+#define	ADCx_ISR	(0x00)		// Interrupt & status register
+#define	ADCx_IER	(0x04)		// Interrupt enable register
+#define	ADCx_CR		(0x08)		// Control register
+#define	ADCx_CFGR	(0x0C)		// Configuration register
+#define	ADCx_CFGR2	(0x10)		// Configuration register 2
+#define	ADCx_SMPR1	(0x14)		// Sampling time register 1
+#define	ADCx_SMPR2	(0x18)		// Sampling time register 2
+#define	ADCx_PCSEL	(0x1C)		// Channel preselection register
+
+#define	ADCx_LTR1	(0x20)
+#define	ADCx_HTR1	(0x24)
+
+#define	ADC3_TR1	(ADC3_BASE+0x20)
+#define	ADC3_TR2	(ADC3_BASE+0x24)
+#define	ADC3_TR3	(ADC3_BASE+0x28)
+
+#define	ADCx_SQR1	(0x30)		// Regular sequence register 1
+#define	ADCx_SQR2	(0x34)		// Regular sequence register 2
+#define	ADCx_SQR3	(0x38)		// Regular sequence register 3
+#define	ADCx_SQR4	(0x3C)		// Regular sequence register 4
+#define	ADCx_DR		(0x40)		// Regular data register
+#define	ADCx_JSQR	(0x4C)
+#define	ADCx_OFR1	(0x60)
+#define	ADCx_OFR2	(0x64)
+#define	ADCx_OFR3	(0x68)
+#define	ADCx_OFR4	(0x6C)
+#define	ADCx_JDR1	(0x80)
+#define	ADCx_JDR2	(0x84)
+#define	ADCx_JDR3	(0x88)
+#define	ADCx_JDR4	(0x8C)
+#define	ADCx_AWD2CR	(0xA0)
+#define	ADCx_AWD3CR	(0xA4)
+#define	ADCx_LTR2	(0xB0)
+#define	ADCx_HTR2	(0xB4)
+#define	ADCx_LTR3	(0xB8)
+#define	ADCx_HTR3	(0xBC)
+
+#define	ADC3_DIFSEL	(ADC3_BASE+0xB0)
+#define	ADC3_CALFACT	(ADC3_BASE+0xB4)
+
+#define	ADCx_DIFSEL	(0xC0)
+#define	ADCx_CALFACT	(0xC4)
+#define	ADCx_CALFACT2	(0xC8)
+
+#define	ADC_ISR_ADRDY	(1<<0)		// ADC ready
+#define	ADC_ISR_EOC	(1<<2)		// End of conversion
+#define	ADC_ISR_EOS	(1<<3)		// End of regular sequence
+
+#define	ADC_IER_ADRDYIE	(1<<0)		// ADC ready interrupt enable
+#define	ADC_IER_EOCIE	(1<<2)		// End of conversion interrupt enable
+#define	ADC_IER_OVRIE	(1<<4)		// Overrun interrupt enable
+
+#define	ADC_CR_ADEN	(1<<0)		// ADC enable
+#define	ADC_CR_ADDIS	(1<<1)		// ADC disable
+#define	ADC_CR_ADSTART	(1<<2)		// ADC regular convert start
+#define	ADC_CR_ADSTP	(1<<4)		// ADC regular convert stop
+#define	ADC_CR_JADSTP	(1<<5)		// ADC injected convert stop
+#define	ADC_CR_BOOST	(3<<8)		// ADC boost mode control
+#define	ADC_CR_ADVREGEN	(1<<28)		// ADC voltage regulator enabled
+#define	ADC_CR_DEEPPWD	(1<<29)		// ADC deep powerdown enable
+#define	ADC_CR_ADCAL	(1<<31)		// ADC calibration
+
+/* A/DC common register */
+#define	ADCx_CSR	(0x00)		// Common status register
+#define	ADCx_CCR	(0x08)		// Common control register
+#define	ADCx_CDR	(0x0C)		// Common regular register
+#define	ADCx_CDR2	(0x10)		// Common regular register 2
+
+/*
+ * A/D converter interrupt number
+*/
+#define	INTNO_INTADC1_2		18
+#define	INTNO_INTADC3		127
+
+#endif		/* __DEV_ADC_STM32H7_H__ */
+=== device/adc/sysdepend/stm32l4/adc_cnf_sysdep.h
+﻿/*
+ *----------------------------------------------------------------------
+ *    Device Driver for μT-Kernel 3.0
+ *
+ *    Copyright (C) 2021-2022 by Ken Sakamura.
+ *    This software is distributed under the T-License 2.2.
+ *----------------------------------------------------------------------
+ *
+ *    Released by TRON Forum(http://www.tron.org) at 2022/02.
+ *
+ *----------------------------------------------------------------------
+ */
+
+
+/*
+ *	adc_cnf_sysdep.h 
+ *	A/D converter device driver configuration file
+ *		for STM32L4
+ */
+#ifndef	__DEV_ADC_CNF_STM32L4_H__
+#define	__DEV_ADC_CNF_STM32L4_H__
+
+/* Device clock initialization */
+#define DEVCONF_ADC_INIT_MCLK	TRUE	// Initialize module clock
+#define	DEVCNF_ADCSEL		1	// ADC clock source   1:PLLADC1CLK  2:PLLADC2CLK  3:SYSCLK
+
+/* Device control data */
+/* Common */
+#define	DEVCNF_ADC_CKMODE	0	// ADC clock mode  0:Asynchronous clock mode
+#define	DEVCNF_ADC_PRESC	10	// ADC prescaler  0 ~ 11
+
+/* ADC1 */
+#define	DEVCONF_ADC1_SMPR1	0x00000000	// Sampling time (ADC_SMPR1 initial value)
+#define	DEVCONF_ADC1_SMPR2	0x00000000	// Sampling time (ADC_SMPR2 initial value)
+
+/* ADC2 */
+#define	DEVCONF_ADC2_SMPR1	0x00000000	// Sampling time (ADC_SMPR1 initial value)
+#define	DEVCONF_ADC2_SMPR2	0x00000000	// Sampling time (ADC_SMPR2 initial value)
+
+/* ADC3 */
+#define	DEVCONF_ADC3_SMPR1	0x00000000	// Sampling time (ADC_SMPR1 initial value)
+#define	DEVCONF_ADC3_SMPR2	0x00000000	// Sampling time (ADC_SMPR2 initial value)
+
+/* Interrupt t priority */
+#define	DEVCNF_ADC12_INTPRI	5
+#define	DEVCNF_ADC3_INTPRI	5
+
+/* A/D conversion timeout time */
+#define	DEVCNF_ADC_TMOSCAN	1000
+
+#endif		/* __DEV_ADC_CNF_STM32L4_H__ */
+=== device/adc/sysdepend/stm32l4/adc_sysdep.h
+﻿/*
+ *----------------------------------------------------------------------
+ *    Device Driver for μT-Kernel 3.0
+ *
+ *    Copyright (C) 2021-2022 by Ken Sakamura.
+ *    This software is distributed under the T-License 2.2.
+ *----------------------------------------------------------------------
+ *
+ *    Released by TRON Forum(http://www.tron.org) at 2022/02.
+ *
+ *----------------------------------------------------------------------
+ */
+
+/*
+ *	adc_sysdep.h
+ *	A/D converter device driver
+ *	System-dependent definition for STM32L4
+ */
+
+#ifndef	__DEV_ADC_STM32L4_H__
+#define	__DEV_ADC_STM32L4_H__
+
+#define	DEV_ADC_UNITNM	(3)	/* Number of devive units */
+#define	DEV_ADC_1	(0)	/* ADC1 */
+#define	DEV_ADC_2	(1)	/* ADC2 */
+#define	DEV_ADC_3	(2)	/* ADC3 */
+
+/* NUmber of A/DC chanels */
+#define	ADC_CH_NUM	(19)
+#define	ADC_MAX_SQ	(16)
+
+/*
+ * A/DC Clock source
+ */
+#define	RCC_CCIPR_ADCSEL	0x30000000	// ADC Clock source
+
+/*----------------------------------------------------------------------
+ * A/DC registers
+ */
+
+/* A/DC common register */
+#define	ADC_CSR		(0x50040300UL)	// Common status register
+#define	ADC_CCR		(0x50040308UL)	// Common control register
+#define	ADC_CDR		(0x5004030CUL)	// Common regular register
+
+/* Base address */
+#define ADC1_BASE	(0x50040000UL)
+#define ADC2_BASE	(0x50040100UL)
+#define ADC3_BASE	(0x50040200UL)
+
+/* Register offset */
+#define	ADCx_ISR	(0x00)		// Interrupt & status register
+#define	ADCx_IER	(0x04)		// Interrupt enable register
+#define	ADCx_CR		(0x08)		// Control register
+#define	ADCx_CFGR	(0x0C)
+#define	ADCx_CFGR2	(0x10)
+#define	ADCx_SMPR1	(0x14)		// Sampling time register 1
+#define	ADCx_SMPR2	(0x18)		// Sampling time register 2
+#define	ADCx_TR1	(0x20)
+#define	ADCx_TR2	(0x24)
+#define	ADCx_TR3	(0x28)
+#define	ADCx_SQR1	(0x30)		// Regular sequence register 1
+#define	ADCx_SQR2	(0x34)		// Regular sequence register 2
+#define	ADCx_SQR3	(0x38)		// Regular sequence register 3
+#define	ADCx_SQR4	(0x3C)		// Regular sequence register 4
+#define	ADCx_DR		(0x40)		// Regular data register
+#define	ADCx_JSQR	(0x4C)
+#define	ADCx_OFR1	(0x60)
+#define	ADCx_OFR2	(0x64)
+#define	ADCx_OFR3	(0x68)
+#define	ADCx_OFR4	(0x6C)
+#define	ADCx_JDR1	(0x80)
+#define	ADCx_JDR2	(0x84)
+#define	ADCx_JDR3	(0x88)
+#define	ADCx_JDR4	(0x8C)
+#define	ADCx_AWD2CR	(0xA0)
+#define	ADCx_AWD3CR	(0xA4)
+#define	ADCx_DIFSEL	(0xB0)
+#define	ADCx_CALFACT	(0xB4)
+
+#define	ADC_ISR_ADRDY	(1<<0)		// ADC ready
+#define	ADC_ISR_EOC	(1<<2)		// End of conversion
+#define	ADC_ISR_EOS	(1<<3)		// End of regular sequence
+
+#define	ADC_IER_ADRDYIE	(1<<0)		// ADC ready interrupt enable
+#define	ADC_IER_EOCIE	(1<<2)		// End of conversion interrupt enable
+#define	ADC_IER_OVRIE	(1<<4)		// Overrun interrupt enable
+
+
+#define	ADC_CR_ADEN	(1<<0)		// ADC enable
+#define	ADC_CR_ADDIS	(1<<1)		// ADC disable
+#define	ADC_CR_ADSTART	(1<<2)		// ADC regular convert start
+#define	ADC_CR_ADSTP	(1<<4)		// ADC regular convert stop
+#define	ADC_CR_ADVREGEN	(1<<28)		// ADC voltage regulator enabled
+#define	ADC_CR_DEEPPWD	(1<<29)		// ADC deep powerdown enable
+#define	ADC_CR_ADCAL	(1<<31)		// ADC calibration
+
+/*
+ * A/D converter interrupt number
+*/
+#define	INTNO_INTADC1_2		18
+#define	INTNO_INTADC3		47
+
+#endif		/* __DEV_ADC_STM32L4_H__ */
+=== device/adc/sysdepend/tx03_m367/adc_cnf_sysdep.h
+﻿/*
+ *----------------------------------------------------------------------
+ *    Device Driver for μT-Kernel 3.0
+ *
+ *    Copyright (C) 2020-2022 by Ken Sakamura.
+ *    This software is distributed under the T-License 2.2.
+ *----------------------------------------------------------------------
+ *
+ *    Released by TRON Forum(http://www.tron.org) at 2022/2.
+ *
+ *----------------------------------------------------------------------
+ */
+
+
+/*
+ *	adc_cnf_sysdep.h 
+ *	A/D converter device driver configuration file
+ *		for TX03_M367 (TMPM369FDFG)
+ */
+#ifndef	__DEV_ADC_CNF_M367_H__
+#define	__DEV_ADC_CNF_M367_H__
+
+/* Device control data */
+/* ADC Unit-A */
+#define DEVCNF_ADCA_CLK		0x00000001	// Clock setting (ADxCLK register initial value)
+#define	DEVCNF_ADCA_INTPRI	5		// Interrupt priority
+#define	DEVCNF_ADCA_TMOSCAN	1000		// A/D conversion timeout time
+
+/* ADC Unit-B */
+#define DEVCNF_ADCB_CLK		0x00000001	// Clock setting (ADxCLK register initial value)
+#define	DEVCNF_ADCB_INTPRI	5		// Interrupt priority
+#define	DEVCNF_ADCB_TMOSCAN	1000		// A/D conversion timeout time
+
+#endif		/* __DEV_ADC_CNF_M367_H__ */
+=== device/adc/sysdepend/tx03_m367/adc_sysdep.h
+﻿/*
+ *----------------------------------------------------------------------
+ *    Device Driver for μT-Kernel 3.0
+ *
+ *    Copyright (C) 2020 by Ken Sakamura.
+ *    This software is distributed under the T-License 2.2.
+ *----------------------------------------------------------------------
+ *
+ *    Released by TRON Forum(http://www.tron.org) at 2020/10/21.
+ *
+ *----------------------------------------------------------------------
+ */
+
+
+/*
+ *	adc_sysdep.h
+ *	A/D converter device driver
+ *	System-dependent definition for TX03_M367
+ */
+
+#ifndef	__DEV_ADC_M367_H__
+#define	__DEV_ADC_M367_H__
+
+#define	DEV_ADC_UNITNM	(2)	/* Number of devive units */
+#define	DEV_ADC_UNIT0	(0)
+#define	DEV_ADC_UNIT1	(1)
+
+#define ADC_CH_NUM	(4)		/* NUmber of A/DC chanels */
+
+/*
+ * ADC registers
+ */
+#define ADA_BASE	(0x40050000UL)
+#define ADB_BASE	(0x40051000UL)
+
+#define ADxCLK		(0x00)		/* Clock setting register */
+
+/* Mode register */
+#define ADxMOD0		(0x04)
+#define ADxMOD1		(0x08)
+#define ADxMOD2		(0x0C)
+#define ADxMOD3		(0x10)
+#define ADxMOD4		(0x14)
+#define ADxMOD5		(0x18)
+#define ADxMOD6		(0x1C)
+
+/* Monitor interrupt setting register */
+#define ADxCMPCR0	(0x24)
+#define ADxCMPCR1	(0x28)
+
+/* Conversion result comparison register */
+#define ADxCMP0		(0x2C)
+#define ADxCMP1		(0x30)
+
+/* Conversion result storage register */
+#define ADxREG00	(0x34)
+#define ADxREG01	(0x38)
+#define ADxREG02	(0x3C)
+#define ADxREG03	(0x40)
+#define ADxREG04	(0x44)
+#define ADxREG05	(0x48)
+#define ADxREG06	(0x4C)
+#define ADxREG07	(0x50)
+
+/* Register Bit definition */
+#define ADxMOD0_ADS	(1<<0)
+#define ADxMOD1_DACON	(1<<7)
+
+/* Conversion mode (ADxMOD3) */
+#define	ADMD_CHFIX_SINGLE	0x00	// MOD3.REPEAT = 0, MODE3.SCAN = 0
+#define	ADMD_CHSCAN_SINGLE	0x01	// MOD3.REPEAT = 0, MODE3.SCAN = 1
+
+/*
+ * A/D converter interrupt number
+*/
+#define	INTNO_INTADA	43
+#define	INTNO_INTADB	47
+
+#endif		/* __DEV_ADC_M367_H__ */
+=== device/adc/adc.c
+/*
+ *----------------------------------------------------------------------
+ *    Device Driver for μT-Kernel 3.0
+ *
+ *    Copyright (C) 2020-2022 by Ken Sakamura.
+ *    This software is distributed under the T-License 2.2.
+ *----------------------------------------------------------------------
+ *
+ *    Released by TRON Forum(http://www.tron.org) at 2022/02.
+ *
+ *----------------------------------------------------------------------
+ */
+#include <sys/machine.h>
+#include <tk/tkernel.h>
+#include <tstdlib.h>
+
+#include "adc.h"
+#include "../include/dev_def.h"
+#if DEV_ADC_ENABLE
+/*
+ *	adc.c
+ *	A/D converter device driver 
+*/
+
+/*----------------------------------------------------------------------*/
+/* Device driver Control block
+ */
+#if TK_SUPPORT_MEMLIB
+
+LOCAL T_ADC_DCB	*dev_adc_cb[DEV_ADC_UNITNM];
+#define		get_dcb_ptr(unit)	(dev_adc_cb[unit])
+#define		get_dcb_mem(unit,a)	(dev_adc_cb[unit]->a)
+
+#else
+
+LOCAL T_ADC_DCB	dev_adc_cb[DEV_ADC_UNITNM];
+#define		get_dcb_ptr(unit)	(&dev_adc_cb[unit])
+#define		get_dcb_mem(unit,a)	(dev_adc_cb[unit].a)
+
+#endif	/* TK_SUPPORT_MEMLIB */
+
+/*----------------------------------------------------------------------*/
+/* Attribute data control
+ */
+LOCAL ER read_atr(T_ADC_DCB *p_dcb, T_DEVREQ *req)
+{
+	ER	err	= E_OK;
+
+	switch(req->start) {
+	case TDN_EVENT:			/* MBF ID for event notification */
+		if(req->size >= sizeof(ID)) {
+			*(ID*)req->buf = p_dcb->evtmbfid;
+		} else if(req->size != 0) {
+			err = E_PAR;
+			break;
+		}
+		req->asize = sizeof(ID);
+		break;
+	default:
+		err = E_PAR;
+		break;
+	}
+
+	return err;
+}
+
+
+LOCAL ER write_atr(T_ADC_DCB *p_dcb, T_DEVREQ *req)
+{
+	ER	err	= E_OK;
+
+	switch(req->start) {
+	case TDN_EVENT:			/* MBF ID for event notification */
+		if(req->size >= sizeof(ID)) {
+			p_dcb->evtmbfid = *(ID*)req->buf;
+		} else if(req->size != 0) {
+			err = E_PAR;
+			break;
+		}
+		req->asize = sizeof(ID);
+		break;
+	default:
+		err = E_PAR;
+		break;
+	}
+
+	return err;
+}
+
+/*----------------------------------------------------------------------*/
+/* Device-specific data control
+ */
+LOCAL ER read_data(T_ADC_DCB *p_dcb, T_DEVREQ *req)
+{
+	W	rtn;
+	ER	err = E_OK;
+
+	if(req->size) {
+		rtn = dev_adc_llctl( p_dcb->unit, LLD_ADC_READ, req->start, req->size, req->buf);
+		if(rtn > 0) {
+			req->asize = rtn;
+			if(req->size != rtn) err = E_IO;
+		} else {
+			err = (ER)rtn;
+		}
+	} else {
+		req->asize = dev_adc_llctl( p_dcb->unit, LLD_ADC_RSIZE, req->start, 0, 0);
+	}
+
+	return err;
+}
+
+
+/*----------------------------------------------------------------------
+ * mSDI I/F function
+ */
+/*----------------------------------------------------------------------
+ * Open device
+ */
+ER dev_adc_openfn( ID devid, UINT omode, T_MSDI *msdi)
+{
+	T_ADC_DCB	*p_dcb;
+	ER		err;
+
+	p_dcb = (T_ADC_DCB*)(msdi->dmsdi.exinf);
+
+	/* Device Open operation */
+	p_dcb->omode = omode;
+	err = (ER)dev_adc_llctl( p_dcb->unit, LLD_ADC_OPEN, 0, 0, 0);
+
+	return err;
+}
+
+/*----------------------------------------------------------------------
+ * Close Device
+ */
+ER dev_adc_closefn( ID devid, UINT option, T_MSDI *msdi)
+{
+	T_ADC_DCB	*p_dcb;
+	ER		err;
+
+	p_dcb = (T_ADC_DCB*)(msdi->dmsdi.exinf);
+
+	/* Device Close operation */
+	err =(ER)dev_adc_llctl( p_dcb->unit, LLD_ADC_CLOSE, 0, 0, 0);
+	
+	return err;
+}
+
+/*----------------------------------------------------------------------
+ * Read Device
+ */
+ER dev_adc_readfn( T_DEVREQ *req, T_MSDI *p_msdi)
+{
+	T_ADC_DCB	*p_dcb;
+	ER		err;
+
+	p_dcb = (T_ADC_DCB*)(p_msdi->dmsdi.exinf);
+
+	if(req->start >= 0) {	// Device specific data
+		if( p_dcb->omode & TD_READ ) {
+			err = read_data( p_dcb, req);
+		} else {
+			err = E_OACV;
+		}
+	} else {		// Device attribute data
+		err = read_atr( p_dcb, req);
+	}
+
+	return err;
+}
+
+/*----------------------------------------------------------------------
+ * Write Device
+ */
+ER dev_adc_writefn( T_DEVREQ *req, T_MSDI *p_msdi)
+{
+	T_ADC_DCB	*p_dcb;
+	ER		err;
+
+	p_dcb = (T_ADC_DCB*)(p_msdi->dmsdi.exinf);
+
+	if(req->start >= 0) {	// Device specific data
+		err = E_PAR;
+	} else {		// Device attribute data
+		err = write_atr( p_dcb, req);
+	}
+
+	return err;
+}
+
+/*----------------------------------------------------------------------
+ * Event Device
+ */
+ER dev_adc_eventfn( INT evttyp, void *evtinf, T_MSDI *msdi)
+{
+	return E_NOSPT;
+}
+
+/*----------------------------------------------------------------------
+ * Device driver initialization and registration
+ */
+EXPORT ER dev_init_adc( UW unit )
+{
+	T_ADC_DCB	*p_dcb;
+	T_IDEV		idev;
+	T_MSDI		*p_msdi;
+	T_DMSDI		dmsdi;
+	ER		err;
+	INT		i;
+
+	if( unit >= DEV_ADC_UNITNM) return E_PAR;
+
+#if TK_SUPPORT_MEMLIB
+	p_dcb = (T_ADC_DCB*)Kmalloc(sizeof(T_ADC_DCB));
+	if( p_dcb == NULL) return E_NOMEM;
+	dev_adc_cb[unit]	= p_dcb;
+#else
+	p_dcb = &dev_adc_cb[unit];
+#endif	/* TK_SUPPORT_MEMLIB */
+
+	/* Device registration information */
+	dmsdi.exinf	= p_dcb;
+	dmsdi.drvatr	= 0;			/* Driver attributes */
+	dmsdi.devatr	= TDK_UNDEF;		/* Device attributes */
+	dmsdi.nsub	= 0;			/* Number of subunits */
+	dmsdi.blksz	= 1;			/* Unique data block size (-1 = unknown) */
+	dmsdi.openfn	= dev_adc_openfn;
+	dmsdi.closefn	= dev_adc_closefn;
+	dmsdi.readfn	= dev_adc_readfn;
+	dmsdi.writefn	= dev_adc_writefn;
+	dmsdi.eventfn	= dev_adc_eventfn;
+	
+	knl_strcpy( (char*)dmsdi.devnm, DEVCNF_ADC_DEVNAME);
+	i = knl_strlen(DEVCNF_ADC_DEVNAME);
+	dmsdi.devnm[i] = (UB)('a' + unit);
+	dmsdi.devnm[i+1] = 0;
+
+	err = msdi_def_dev( &dmsdi, &idev, &p_msdi);
+	if(err != E_OK) goto err_2;
+
+	p_dcb->unit	= unit;
+	p_dcb->evtmbfid = idev.evtmbfid;
+
+	/* Low-level device initialization */
+	err = (ER)dev_adc_llinit( get_dcb_ptr(unit));
+	if(err != E_OK) goto err_1;
+
+	return E_OK;
+
+err_1:
+	msdi_del_dev(p_msdi);
+err_2:
+	Kfree(p_dcb);
+	return err;
+}
+
+#endif	/* DEV_ADC_ENABLE */

@@ -22,6 +22,17 @@
 #include "mqtt_utk.h"
 #include <tm/tmonitor.h>
 
+/* ---- SE18 telemetry hooks (app_program/subsystem1). Changed lines are marked SE18. ----
+ * The robot's telemetry code runs HERE, inside this WiFi service task, through two hooks:
+ *   s1_service()  every 100 ms while connected: publishes status / heartbeat / barcode reads
+ *   s1_rx()       for every message on S1_CMD_TOPIC: START / STOP / RESET for the robot
+ * Declared by hand (not via subsystem1.h) to keep tk/tkernel.h out of this file, as explained above. */
+typedef int (*s1_publish_fn)(void *ctx, const char *topic, const char *payload, int len);	/* SE18 */
+extern void s1_service(s1_publish_fn publish, void *ctx, u32_t now_ms);			/* SE18 */
+extern void s1_rx(const char *topic, const char *payload, int len);				/* SE18 */
+#define S1_CMD_TOPIC		"robot/se18/cmd"						/* SE18 */
+#define S1_SERVICE_MS		100								/* SE18 */
+
 #define MQTT_UTK_HEARTBEAT_MS   5000
 #define MQTT_UTK_KEEPALIVE_S    60
 #define MQTT_UTK_RETRY_MS       3000
@@ -44,6 +55,31 @@ static u16_t		rx_len;
 static u8_t		rx_truncated;
 
 static void heartbeat_timeout(void *arg);
+
+/* SE18: publish for the telemetry code; 0 = queued, -1 = not (buffer full / offline: it simply tries later) */
+static int s1_pub(void *ctx, const char *topic, const char *payload, int len)
+{
+	(void)ctx;
+	if(client == NULL || !mqtt_client_is_connected(client)) return -1;
+	return mqtt_publish(client, topic, payload, (u16_t)len, 0 /* qos */, 0 /* retain */,
+			    NULL, NULL) == ERR_OK? 0: -1;
+}
+
+/* SE18: the telemetry service, every S1_SERVICE_MS while connected */
+static void s1_timeout(void *arg)
+{
+	(void)arg;
+	if(client != NULL && mqtt_client_is_connected(client)) {
+		s1_service(s1_pub, NULL, sys_now());
+	}
+	sys_timeout(S1_SERVICE_MS, s1_timeout, NULL);
+}
+
+static int same_topic(const char *a, const char *b)	/* SE18 */
+{
+	while(*a && *a == *b) { a++; b++; }
+	return *a == *b;
+}
 
 /* mqtt.c NUL-terminates the topic before handing it over, but it is only
  * valid for the duration of this call -- copy it out. */
@@ -84,6 +120,9 @@ static void incoming_data_cb(void *arg, const u8_t *data, u16_t len, u8_t flags)
 		rx_data[rx_len] = '\0';
 		tm_printf((UB*)"mqtt: RX [%s] \"%s\"%s\n", rx_topic, rx_data,
 			  rx_truncated? " (truncated)": "");
+		if(same_topic(rx_topic, S1_CMD_TOPIC)) {		/* SE18: a command for the robot */
+			s1_rx(rx_topic, (const char *)rx_data, (int)rx_len);
+		}
 	}
 }
 
@@ -165,6 +204,16 @@ static void connection_cb(mqtt_client_t *c, void *arg, mqtt_connection_status_t 
 			tm_printf((UB*)"mqtt: mqtt_subscribe() failed, err=%d\n",
 				  (int)err);
 		}
+
+		/* SE18: robot commands, and the telemetry service chain */
+		err = mqtt_subscribe(client, S1_CMD_TOPIC, 0 /* qos */,
+				     subscribe_done_cb, NULL);
+		if(err != ERR_OK) {
+			tm_printf((UB*)"mqtt: subscribe " S1_CMD_TOPIC " failed, err=%d\n",
+				  (int)err);
+		}
+		sys_untimeout(s1_timeout, NULL);
+		sys_timeout(S1_SERVICE_MS, s1_timeout, NULL);
 
 		/* Drop any chain left over from a previous connection before
 		 * arming a new one. Each reconnect would otherwise add another
