@@ -317,6 +317,7 @@ WIFI_INCLUDES := -I"$(WIFIDIR)" \
                  -I"$(CYW43_PICO_PATH)/include" \
                  -I"$(PICO_SDK_PATH)/src/boards/include" \
                  -I"$(PICO_SDK_PATH)/src/common/pico_base_headers/include" \
+                 -I"$(PICO_SDK_PATH)/src/common/pico_time/include" \
                  -I"$(PICO_SDK_PATH)/src/common/hardware_claim/include" \
                  -I"$(PICO_SDK_PATH)/src/common/pico_binary_info/include" \
                  -I"$(PICO_SDK_PATH)/src/common/pico_util/include" \
@@ -328,14 +329,18 @@ WIFI_INCLUDES := -I"$(WIFIDIR)" \
                  -I"$(PICO_SDK_PATH)/src/rp2_common/pico_platform_sections/include" \
                  -I"$(PICO_SDK_PATH)/src/rp2_common/pico_platform_panic/include" \
                  -I"$(PICO_SDK_PATH)/src/rp2_common/hardware_base/include" \
+                 -I"$(PICO_SDK_PATH)/src/rp2_common/hardware_adc/include" \
                  -I"$(PICO_SDK_PATH)/src/rp2_common/hardware_pio/include" \
                  -I"$(PICO_SDK_PATH)/src/rp2_common/hardware_gpio/include" \
                  -I"$(PICO_SDK_PATH)/src/rp2_common/hardware_dma/include" \
                  -I"$(PICO_SDK_PATH)/src/rp2_common/hardware_irq/include" \
+                 -I"$(PICO_SDK_PATH)/src/rp2_common/hardware_i2c/include" \
+                 -I"$(PICO_SDK_PATH)/src/rp2_common/hardware_pwm/include" \
                  -I"$(PICO_SDK_PATH)/src/rp2_common/hardware_sync/include" \
                  -I"$(PICO_SDK_PATH)/src/rp2_common/hardware_sync_spin_lock/include" \
                  -I"$(PICO_SDK_PATH)/src/rp2_common/hardware_clocks/include" \
                  -I"$(PICO_SDK_PATH)/src/rp2_common/hardware_resets/include" \
+                 -I"$(PICO_SDK_PATH)/src/rp2_common/hardware_watchdog/include" \
                  -I"$(PICO_SDK_PATH)/src/rp2_common/hardware_timer/include"
 
 CFLAGS += -DTM_WIFI_CYW43=1 -DCYW43_LWIP=$(if $(filter lwip,$(NET)),1,0) -DCYW43_ENABLE_BLUETOOTH=0 \
