@@ -1,9 +1,12 @@
 /*
  *	subsystem5.c
- *	Subsystem 5 -- creates the buffers other subsystems send to, and starts the Vehicle Controller + scan tasks.
+ *	Subsystem 5 -- creates the buffers other subsystems send to, sets up the GP20 START button,
+ *	and starts the Vehicle Controller + scan tasks.
  *	APIs shown: tk_cre_mbf, tk_cre_flg
  */
 #include "subsystem5.h"
+#include "vc_config.h"
+#include "drv_button.h"
 
 EXPORT ID	mbf_imu_evt;	/* IF-06 (replaces S4's weak default) */
 EXPORT ID	mbf_nav_cmd;	/* IF-12 (replaces S3's weak default) */
@@ -42,7 +45,16 @@ EXPORT ER subsystem5_init(void)
 	cflg.flgatr  = TA_TFIFO | TA_WMUL;
 	cflg.iflgptn = 0;
 	flg_scan = tk_cre_flg(&cflg);
-	return (flg_scan < E_OK) ? flg_scan : E_OK;
+	if (flg_scan < E_OK) return flg_scan;
+
+#if VC_START_BTN
+	/* GP20 START button.  Set up here, before any task runs, and read ONLY by vc_task.
+	   The pin is an input with the internal pull-up: a press is the only way the car starts
+	   on the bench, and an open/unplugged button reads "not pressed". */
+	if (!button_init())
+		return E_PAR;
+#endif
+	return E_OK;
 }
 
 EXPORT ER subsystem5_start(void)

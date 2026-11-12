@@ -54,9 +54,9 @@ void servo_set_deg(int deg)
 
 static int us_trig = PIN_US_TRIG, us_echo = PIN_US_ECHO;
 
-/* pins the search may use: free on this robot (not IMU 0/1, encoders 2-5, motors 8-11, servo 15, IR 26-28, and not
-   the Robo Pico's RGB LED 18, buttons 20/21 or buzzer 22) */
-static const unsigned char cand[] = { 16, 17, 19, 12, 13, 14, 6, 7 };
+/* pins the search may use: free on this robot (not IMU 0/1, encoders 2-5, motors 8-11, servo 15,
+   the GP20 START button, IR 26-28).  Never add GP20: the search would drive the button's pin. */
+static const unsigned char cand[] = { 16, 17, 18, 19, 21, 22, 12, 13, 14, 6, 7 };
 
 static void pin_out(int p)
 {

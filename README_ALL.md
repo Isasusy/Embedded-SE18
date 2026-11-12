@@ -17,7 +17,8 @@ Per-subsystem detail for S2 and S4 is in `docs/`.
 READY / ALIVE flags of S2, S3, S4, and drives the mission: INIT -> IDLE -> LINE_FOLLOW -> BARCODE_ACTION / HUMP_CROSSING / OBSTACLE_AVOID / RECOVER ->
 COMPLETE, FAULT from anywhere. Only `motion_task` (S2) writes the motors. Impact, remote stop, motion fault, a task silent for 100 ms: the VC sets the STOP
 bit and S2 cuts the motors in its next 10 ms loop. Remote RESET clears STOP, resets S2 and the IMU's running maximum, and re-runs the self-test.
-All cross-subsystem calls use `TMO_POL`: nothing waits for another subsystem.
+All cross-subsystem calls use `TMO_POL`: nothing waits for another subsystem. Power-up is a **STOP** state (`VC_AUTOSTART_MS 0`);
+the run starts when the **GP20** start button is pressed (S5's `drv_button.c`) or when MQTT sends `start`.
 
 ## Install
 1. Replace the five `app_program/subsystemN/` and `testing/subsystemN/` folders. Paste `TEAM_ALL.md` into `TEAM.md`.
@@ -31,7 +32,8 @@ All cross-subsystem calls use `TMO_POL`: nothing waits for another subsystem.
 2. **S3**: watch the 2 Hz `[S3]` line. Calibration needs both sensors to see white AND black in the first 2 s (rock the robot over the line).
    Check `offset` sign: line under the right sensor is positive and `steer` negative.
 3. **S5 scan**: put a box 30 cm ahead, trigger a scan, read `[S5] scan:` (width within 20 % is the NFR4 target).
-4. All five: `[S5] state ->` lines show INIT -> IDLE. Send `start` to `robot/se18/cmd` (or build a test that sends `REMOTE_START` to `mbf_remote_cmd`).
+4. All five: `[S5] state ->` lines show INIT -> IDLE. The car is now **stopped**: press the **GP20** start button to start it
+   (or send `start` to `robot/se18/cmd`, or set `VC_AUTOSTART_MS > 0` for a buttonless bench run).
 5. Set `S2_BENCH_SCRIPT 0`, all `*_DEBUG_PRINT 0`, `VC_WATCHDOG_ENABLE 1` at integration.
 
 ## Things you must settle with the team (I had to assume them)

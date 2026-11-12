@@ -37,9 +37,8 @@ File: `config/config_device.h`
 | subsystem2/motion_config.h | MC_TICKS_PER_REV | 860 (hand-measured) | confirm with 1 m push test |
 | subsystem2/motion_config.h | S2_MOTOR_TEST | 0 | 0 |
 | subsystem2/motion_config.h | S2_DEBUG_PRINT | 1 | 0 |
-| subsystem5/vc_config.h | VC_START_BUTTON | 1 (start / stop with the GP20/GP21 button) | keep, or 0 to start only by MQTT / autostart |
-| subsystem5/vc_config.h | VC_AUTOSTART_MS | 5000 (only used when VC_START_BUTTON is 0) | 0 |
-| subsystem5/vc_config.h | VC_SELFTEST_MS | 15000 (covers the IMU's calibration retries) | keep |
+| subsystem5/vc_config.h | VC_AUTOSTART_MS | 0 (start with the GP20 button instead) | 0 |
+| subsystem5/vc_config.h | VC_START_BTN / VC_START_BTN_ACTIVE_LOW / VC_START_BTN_DEBOUNCE_MS | 1 / 1 / 25 (GP20 to GND, internal pull-up) | keep |
 | subsystem5/vc_config.h | VC_REQUIRE_IMU | 0 (IMU does not answer on the bench) | 1 |
 | subsystem5/vc_config.h | VC_WATCHDOG_ENABLE | 0 | 1 |
 | subsystem5/vc_config.h | VC_BENCH_LINE_ONLY | 1 (creep at VC_BENCH_SPEED 90 mm/s, ignore humps and the IMU; stops for obstacles; barcodes only with VC_BENCH_BARCODES) | 0 |

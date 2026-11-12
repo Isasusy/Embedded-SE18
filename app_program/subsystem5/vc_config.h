@@ -50,18 +50,27 @@
 #define VC_WATCHDOG_ENABLE	0		/* 1 at integration; 0 on the bench so a stand-alone S5 does not reset */
 #define VC_WATCHDOG_MS		500
 
-/* ---- bench start: no MQTT needed ----
-   0 = wait for a REMOTE_START (from S1/MQTT). N > 0 = start the mission by itself N ms after power-up, once,
-   as soon as every subsystem reports READY. LIFT THE WHEELS OFF THE TABLE FIRST. Set 0 at integration. */
-#define VC_AUTOSTART_MS		5000		/* only used when VC_START_BUTTON is 0 */
-
-/* ---- start / stop button (Robo Pico GP20 or GP21) ----
-   1 = the car waits in IDLE until a button is pressed and released, then starts VC_BUTTON_DELAY_MS later (hand clear).
-   Pressing it while the car runs stops it; pressing again starts it again. */
-#ifndef VC_START_BUTTON
-#define VC_START_BUTTON		1
+/* ---- the START button on GP20 (the normal way to start the run) ----
+   0 = no button: the run starts from a REMOTE_START (S1/MQTT) or from VC_AUTOSTART_MS below.
+   1 = the run starts when the button is pressed.
+   Wiring: one side of the button to GP20, the other to GND.  The RP2040's internal pull-up keeps
+   GP20 high when the button is open, so a press reads low and an unplugged button reads "not
+   pressed" (the car stays stopped instead of starting by itself).  No external resistor. */
+#ifndef VC_START_BTN
+#define VC_START_BTN		1
 #endif
-#define VC_BUTTON_DELAY_MS	1000
+#define VC_START_BTN_ACTIVE_LOW	1		/* 1 = button to GND with the internal pull-up; 0 = button to 3V3, pull-down */
+#define VC_START_BTN_DEBOUNCE_MS 25		/* a new level must be stable this long (vc_task samples every VC_TICK_MS) */
+
+/* ---- bench start: no MQTT needed ----
+   The car ALWAYS powers up in the STOP state: VC_INIT -> VC_IDLE, motors off (see vc_init / vc_task).
+   It then starts when
+     - the GP20 button is pressed  (VC_START_BTN 1, the normal way), or
+     - a REMOTE_START arrives from S1/MQTT, or
+     - VC_AUTOSTART_MS > 0: by itself N ms after power-up, once, as soon as every subsystem reports
+       READY.  LIFT THE WHEELS OFF THE TABLE FIRST.
+   0 at integration. */
+#define VC_AUTOSTART_MS		0
 
 /* 1 = the mission needs a working IMU (normal). 0 = BENCH ONLY: ignore the IMU's READY/ALIVE so the motors and line
    sensors can be tested while the IMU is not wired yet. The robot then has no impact stop and no hump detection. */

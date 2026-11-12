@@ -31,11 +31,52 @@ The ultrasonic driver now uses the GPIO registers directly. At power-up it check
 `PIN_US_ECHO` in drv_scan.h); if nothing answers it tries the swapped pair and then every pair of free pins and prints
 `[S5] ultrasonic FOUND: TRIG=GPx ECHO=GPy`. Put those numbers into drv_scan.h. The S2 status line now also prints `fault=`.
 
-## Start / stop button (11 Nov, v24)
+## START button on GP20, power-up in STOP (11 Nov)
 
-`VC_START_BUTTON 1` (vc_config.h): after power-up the car waits in IDLE and prints
-`[S5] ready: press a button on the Robo Pico (GP20 or GP21) to start`. Press and release either on-board button: it
-starts `VC_BUTTON_DELAY_MS` (1 s) later, so your hand is clear. Press while it runs: it stops (`button: STOP`).
-Press again: it resets and starts again. The buttons pull the pin to GND; the pads get internal pull-ups.
-The ultrasonic pin search no longer touches GP18 (RGB LED), GP20/21 (buttons) or GP22 (buzzer).
-`VC_START_BUTTON 0` brings back the old 5 s automatic start (`VC_AUTOSTART_MS`). An MQTT `start` still works too.
+The car powers up **stopped** and starts only when the GP20 button is pressed. Nothing else is needed on the bench: there
+is no autostart and no MQTT command.
+
+**Wiring** (no external parts): one side of the button to **GP20**, the other side to **GND**. The RP2040's internal
+pull-up holds GP20 high while the button is open, so a press reads low (active low) and an unplugged or broken button
+reads "not pressed" — the car cannot start by itself.
+
+**Where it lives.** `subsystem5/drv_button.c` / `.h` (pin `PIN_START_BTN`, pull-up and debounce) plus a few lines in
+`vc_task.c`. Nothing else needs rewriting: the button produces the same `remote_cmd_t` an MQTT command produces
+(IF-15), so the state machine in `vc_logic.c` is untouched, and no other subsystem's code or shared kernel/config file
+changes. The one extra edit is in S5's own `drv_scan.c`: GP20 is removed from the ultrasonic autodetect list, which
+would otherwise have driven the button's pin during its wiring search. The pin is claimed in `TEAM.md` section 2; the
+owning task is `vc_task`.
+
+**What a press does, by state:**
+
+| State when pressed | Result |
+|---|---|
+| `INIT` (self-test, < `VC_SELFTEST_MS`) | ignored; press again once the console shows `state -> IDLE` |
+| `IDLE` | **starts the run**: sends `MOTION_CMD_GO` at `VC_CRUISE_SPEED`, state -> `LINE_FOLLOW` |
+| `LINE_FOLLOW` and every other running state | ignored — brushing the button does not stop a run |
+| `FAULT` / `COMPLETE` | **reset first** (same as `REMOTE_RESET`): back to `INIT` -> `IDLE`, stopped. The next press starts |
+
+So after a fault the car never jumps straight back into driving: one press clears the fault, a second press starts.
+
+**Why the run starts in STOP.**
+
+- `motion_task` calls `motor_off()` at power-up, so PWM is 0 before the first loop;
+- `vc_task` sends one `MOTION_CMD_STOP` before its first tick;
+- `vc_logic.c` starts in `VC_INIT`, and `VC_INIT -> VC_IDLE` only reports the state — it never commands motion;
+- `VC_AUTOSTART_MS` is now **0**, so nothing starts the mission on its own.
+
+The wheels stay off until a `REMOTE_START` (button or MQTT) arrives in `IDLE`.
+
+**Settings** (`vc_config.h`): `VC_START_BTN` 1 = button fitted, 0 = no button (MQTT / `VC_AUTOSTART_MS` only);
+`VC_START_BTN_ACTIVE_LOW` 1 = button to GND with the pull-up, 0 = button to 3V3 with a pull-down;
+`VC_START_BTN_DEBOUNCE_MS` 25 (a new level must be stable that long; `vc_task` samples every `VC_TICK_MS` = 20 ms, so a
+press is seen in about 40 ms). Change the pin in `drv_button.h` **and** `TEAM.md`.
+
+**Testing.** `make TEST=1` checks the resting level at power-up (`S5-U01`): a stuck button, a button wired to 3V3, the
+wrong pin, or a missing pull-up (a floating pin reads 0 = pressed) fails that test instead of silently breaking the
+start. Manual check: flash, wheels off the ground, wait 10 s — the car must not move; press GP20 — it drives; release;
+press again while driving — nothing happens.
+
+**Making it start/stop instead.** In `vc_task.c`, change the press handler to send `REMOTE_STOP` when the state is one of
+the running states (`LINE_FOLLOW`, `BARCODE_ACTION`, `HUMP_CROSSING`, `OBSTACLE_AVOID`, `RECOVER`); `REMOTE_STOP` puts
+the VC in `FAULT` with `FAULT_REMOTE_STOP`, which the next press clears.
