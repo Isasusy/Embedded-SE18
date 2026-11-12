@@ -20,6 +20,8 @@ int main(void)
 	CHECK(tm_parse_cmd("{\"cmd\":\"Reset\"}", 15) == REMOTE_RESET, "json reset");
 	CHECK(tm_parse_cmd("go", 2) == -1, "unknown ignored");
 	CHECK(tm_parse_cmd("start stop", 10) == -1, "ambiguous ignored");
+	CHECK(tm_parse_cmd("restart", 7) == -1, "part of a word ignored");
+	CHECK(tm_parse_cmd("{\"cmd\":\"STOP\"}", 14) == REMOTE_STOP, "json stop");
 	CHECK(tm_parse_cmd("", 0) == -1 && tm_parse_cmd(0, 5) == -1, "empty ignored");
 	CHECK(!strcmp(tm_state_name(99), "UNKNOWN") && !strcmp(tm_fault_name(-1), "UNKNOWN"), "out of range names");
 	/* status names match the VC's enum order */

@@ -30,7 +30,8 @@
 #define VC_JUNCTION_PAUSE_ALWAYS 1		/* 1 = also stop at junctions with no barcode waiting (shows that the junction
 						   was seen; then drives straight on). 0 = only when a barcode is waiting */
 #define VC_NAV_EXPIRE_MS	15000		/* a barcode command is dropped if no junction comes within this time (0 = never) */
-#define VC_SELFTEST_MS		4000		/* INIT: all subsystems must report READY in this time */
+#define VC_SELFTEST_MS		15000		/* INIT: all subsystems must report READY in this time. Long enough for the
+						   IMU's calibration retries (up to 5 x (2 s + 0.5 s)) and S3's 2 s calibration */
 #define VC_ALIVE_MS		100		/* NFR10: a task silent longer than this = fault */
 #define VC_RECOVER_TIMEOUT_MS	4000
 #define VC_HUMP_TIMEOUT_MS	6000

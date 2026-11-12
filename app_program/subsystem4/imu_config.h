@@ -1,20 +1,21 @@
 /*
  * imu_config.h - every tunable number for the IMU task in one place.
  * Section 9 of the design review says thresholds "will be tuned": do it here.
- * Each macro is #ifndef-guarded, so you can also override with -DIMU_SHOCK_G=2.5f in CMake.
+ * IMU_MAP_*, IMU_PITCH_RATE_SIGN, S4_DEBUG_PRINT and S4_FAKE_SPEED_MM_S are #ifndef-guarded and can also be
+ * overridden on the compiler command line (-D...); the other values are edited here.
  */
 #ifndef IMU_CONFIG_H
 #define IMU_CONFIG_H
 
 /* ------------------------------------------------------------------ timing / bus */
 #define IMU_PERIOD_MS            10        /* NFR3: 100 Hz                                   */
-#define IMU_I2C_BAUD             400000
-#define IMU_I2C_TIMEOUT_US       3000      /* per transfer; keeps a dead bus from hanging 10 ms loop */
-#define IMU_MAX_READ_FAILS       5         /* consecutive failed reads -> SENSOR_FAULT       */
+/* Bus speed and per-transfer timeout belong to the kernel's I2C driver, not to this file:
+ * device/i2c/sysdepend/rp2040/i2c_cnf_sysdep.h, DEVCNF_I2C0_TMO (10 ms, so a dead bus cannot hang the 10 ms loop). */
+#define IMU_MAX_READ_FAILS       5        /* consecutive failed reads -> SENSOR_FAULT       */
 #define IMU_RETRY_PERIOD_MS      500       /* re-init attempts while in fault                */
 
 /* ------------------------------------------------------------------ chip scale factors
- * Configured in imu_driver.c: accel +-8 g, gyro +-500 dps, DLPF ~94 Hz (MPU6050/6500 family). */
+ * Configured in drv_imu.c: accel +-8 g, gyro +-500 dps, DLPF ~94 Hz (MPU6050/6500 family). */
 #define IMU_ACCEL_LSB_PER_G      4096.0f
 #define IMU_GYRO_LSB_PER_DPS     65.5f
 
@@ -84,8 +85,7 @@
 #define IMU_HUMP_LOCKOUT_MS      300       /* "reset window" after a hump                    */
 #define IMU_MAX_STEP_MM          30.0f     /* larger odometer jumps are treated as resync    */
 
-/* ------------------------------------------------------------------ task */
-#define IMU_TASK_STACK_WORDS     1024
+/* task stack: TASK_STACK_SIZE in app.h (shared by every task) */
 
 /* ------------------------------------------------------------------ bench helpers (subsystem 4 only) */
 #ifndef S4_DEBUG_PRINT

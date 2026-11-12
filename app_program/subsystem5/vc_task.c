@@ -45,8 +45,17 @@ void vc_task(INT stacd, void *exinf)
 	vc_out_t out;
 	remote_cmd_t remote; nav_cmd_t nav; line_evt_t line; imu_evt_t imu; obstacle_t obst;
 	int last_state = -1;
-#if VC_AUTOSTART_MS
+#if VC_AUTOSTART_MS && !VC_START_BUTTON
 	bool autostarted = false;
+#endif
+#if VC_START_BUTTON
+	int btn_ticks = 0;			/* consecutive 20 ms ticks held down */
+	bool btn_held = false;			/* a debounced press is in progress */
+	bool start_pending = false;		/* start once IDLE and the delay has passed */
+	uint32_t start_at = 0;
+	int btn_cmd = -1;			/* REMOTE_STOP / REMOTE_RESET from the button, waiting for a free tick */
+	remote_cmd_t btn_rc;			/* separate from `remote`, so a received MQTT command is never overwritten */
+	button_init();
 #endif
 	(void)stacd; (void)exinf;
 
@@ -118,11 +127,12 @@ void vc_task(INT stacd, void *exinf)
 		{
 			static const char *const nn[] = { "LEFT", "RIGHT", "STRAIGHT", "U-TURN", "STOP" };
 			if (in.nav)
-				S5_PRINTF("[S5] barcode command %s received: will do it at the next junction\n",
-					  (in.nav->cmd >= 0 && in.nav->cmd <= 4) ? nn[in.nav->cmd] : "?");
+				S5_PRINTF("[S5] barcode command %s received: will do it at %s junction\n",
+					  (in.nav->cmd >= 0 && in.nav->cmd <= 4) ? nn[in.nav->cmd] : "?",
+					  (v.state == VC_BARCODE_ACTION && v.sub == 0 && v.junction_cmd < 0) ? "THIS" : "the next");
 			if (in.line && in.line->type == LINE_EVT_JUNCTION)
 				S5_PRINTF("[S5] JUNCTION: %s\n", v.nav_has ? ((v.nav_cmd >= 0 && v.nav_cmd <= 4) ? nn[v.nav_cmd] : "?")
-								  : "no barcode waiting, straight on");
+								  : "no barcode yet (if one finishes in the pause it is used)");
 		}
 #endif
 		vc_step(&v, &in, &out);
@@ -153,6 +163,10 @@ void vc_task(INT stacd, void *exinf)
 		if ((int)v.state != last_state) {
 			last_state = (int)v.state;
 			S5_PRINTF("[S5] state -> %s  fault=%d  max_hump=%d mm\n", vc_state_name(v.state), (int)v.fault, (int)v.max_hump_mm);
+#if VC_START_BUTTON
+			if (v.state == VC_IDLE && !start_pending)
+				S5_PRINTF("[S5] ready: press a button on the Robo Pico (GP20 or GP21) to start\n");
+#endif
 		}
 #endif
 		period_wait();

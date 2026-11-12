@@ -52,6 +52,15 @@
 #define BAR_MAX_WEAK_US		3000000		/* any black longer than this: read dropped */
 #define BAR_LINE_PEAK		1400		/* "dark" = the stripe's peak reading is at least this (thick bars and the line ~2300+) */
 #define BAR_DIP_MIN		1000		/* a "white" that never got lighter than this is only a dip inside one dark bar */
+#define BAR_LEN_SPLIT_RATIO	1.5f		/* bars are split into thin / thick where their sorted durations jump by at least
+						   this factor (Code 39: wide = 2-3 x narrow; 12 Nov bench: 140 -> 380 ms = 2.7x) */
+#define BAR_DIP_LEVEL_PCT	75		/* a "space" whose lightest reading stays this far (%) from white toward the dark
+						   bars is a flicker inside one bar and is merged into it (12 Nov: dips ~3000-3500,
+						   real spaces ~200, bars ~3700) */
+#define BAR_ALLOW_BAD_GUARD	1		/* 1 = accept a code when ONE of its two '*' is unreadable but the other '*' and the
+						   letter are valid (12 Nov: the first '*' was misread while the car steered) */
+#define S3_BARCODE_DUMP		1		/* 1 = after a read that does not decode, print every stripe's duration and peak,
+						   so the real course barcode can be worked out from the log on the day */
 #define BAR_PEAK_SPLIT		600		/* thin and thick bars are told apart by how dark they get (thin ~300, thick ~2400)
 						   when the darkest and lightest bar differ by at least this much */
 #define BAR_END_FACTOR		4		/* the read ends when white lasts this many times the widest BLACK bar ... */
@@ -65,8 +74,10 @@
    change, WHITE starts when it falls BAR_SWING below the highest. Small blurred swings still count. */
 #define BAR_SWING		70 		/* ADC counts; raise if the stripe trace shows noise, lower if bars are missed */
 
-#define BAR_JUNCTION_BLANK_MS	800		/* a "junction" (both line sensors black) while a barcode is being read, or this
-						   soon after its last stripe, is the barcode's own bars: it is ignored */
+/* The course barcode sits BESIDE the line (20 mm gap), so the line sensors never see its bars: both line sensors
+   black is always a junction (or the car lifted, below). A junction that arrives while a barcode read is still open
+   ends that read at once, so its command is known before the car acts on the junction. */
+#define LINE_LIFTED_ADC		3200		/* both line sensors above this (no floor under them) = car lifted, not a junction */
 #define S3_BARCODE_TRACE	1		/* 1 = print every stripe the barcode sensor sees (colour and ms); 0 later */
 
 #define BAR_CHAR_LEFT		'A'

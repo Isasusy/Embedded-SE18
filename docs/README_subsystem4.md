@@ -27,7 +27,7 @@ TEAM_subsystem4.md       rows to paste into TEAM.md (pins, peripheral, priority,
 1. Replace the template's `app_program/subsystem4/` folder with this one (and `testing/subsystem4/` with ours).
 2. Paste the rows in `TEAM_subsystem4.md` into `TEAM.md`.
 3. Build the way the template's README says. `app_main.c` already calls `subsystem4_init()` and `subsystem4_start()`.
-4. The IMU is read through the kernel's I2C device `iicb` (I2C1). Its pins are set in `device/i2c/sysdepend/rp2040/i2c_cnf_sysdep.h`: change `DEVCNF_I2C0_SDA_PIN` / `_SCL_PIN` from 8/9 to **0/1** (see `SHARED_CONFIG_CHANGES.md`).
+4. The IMU is read through the kernel's I2C device `iica` (I2C0). Its pins are set in `device/i2c/sysdepend/rp2040/i2c_cnf_sysdep.h`: `DEVCNF_I2C0_SDA_PIN` / `_SCL_PIN` = **0/1** and `DEVCNF_I2C0_TMO` = 10 ms (see `SHARED_CONFIG_CHANGES.md`).
 5. If the **compiler** complains, the fix is almost certainly in `s4_port.h` (console print, microsecond timer).
 
 ## Running it alone

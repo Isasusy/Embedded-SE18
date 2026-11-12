@@ -43,7 +43,7 @@ IMPORT ID	flg_imu;
 /* ------------------------------------------------------------------------------------------
  * IF-08  Motion Control -> S4 : motion_status_t, shared data under a mutex, owned by Motion Control.
  *        Motion Control updates app_motion every 10 ms:
- *            tk_loc_mtx(mtx_motion, TMO_FEVR); app_motion = ...; tk_unl_mtx(mtx_motion);
+ *            tk_loc_mtx(mtx_motion, TMO_POL); app_motion = ...; tk_unl_mtx(mtx_motion);
  *        S4 reads it with TMO_POL (never blocks); if the mutex is busy it reuses its last copy.
  *        distance_mm is a cumulative odometer (an unexpected drop just resyncs).
  * ------------------------------------------------------------------------------------------ */

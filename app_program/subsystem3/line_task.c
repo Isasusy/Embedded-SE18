@@ -21,21 +21,27 @@ static void period_wait(void)
 }
 
 IMPORT volatile bool	s3_bar_active;		/* barcode_task.c */
-IMPORT volatile uint32_t s3_bar_last_edge_ms;
+IMPORT volatile bool	s3_bar_finish_req;	/* barcode_task.c: set here, cleared there */
+IMPORT volatile char	s3_last_barcode[8];	/* barcode_task.c: last decoded text, "" if the last read failed */
+IMPORT volatile unsigned s3_barcode_count;	/* barcode_task.c: reads so far, valid or not */
 
-static void send_evt(la_event_t e)
+static void send_evt(la_event_t e, int l, int r)
 {
 	static const int map[] = { 0, LINE_EVT_JUNCTION, LINE_EVT_LOST, LINE_EVT_FOUND };
 	static const char *const nm[] = { "", "JUNCTION", "LINE_LOST", "LINE_FOUND" };
 	line_evt_t ev = { map[e], s3_now_ms() };
 
 	if (e == LA_JUNCTION) {
-		uint32_t since = s3_now_ms() - s3_bar_last_edge_ms;
-		if (s3_bar_active || since < BAR_JUNCTION_BLANK_MS) {	/* both sensors on a barcode bar, not a junction */
-			S3_PRINTF("[S3] both line sensors black during a barcode: not a junction\n");
+		if (l > LINE_LIFTED_ADC && r > LINE_LIFTED_ADC) {	/* nothing under the sensors at all */
+			S3_PRINTF("[S3] both line sensors see nothing (car lifted?): not a junction\n");
 			return;
 		}
-		S3_PRINTF("[S3] >> JUNCTION (both line sensors black)\n");
+		if (s3_bar_active) {				/* the barcode is behind us: finish its read now */
+			s3_bar_finish_req = true;
+			S3_PRINTF("[S3] >> JUNCTION (both line sensors black) - ending the barcode read\n");
+		} else {
+			S3_PRINTF("[S3] >> JUNCTION (both line sensors black)\n");
+		}
 	} else if (e == LA_LINE_LOST) {		/* LINE_FOUND is too frequent with the outside-the-line sensors to print */
 		S3_PRINTF("[S3] >> %s\n", nm[e]);
 	}
@@ -74,15 +80,20 @@ void line_task(INT stacd, void *exinf)
 				tk_unl_mtx(mtx_line);
 			}
 			if (o.event != LA_NO_EVENT)
-				send_evt(o.event);
+				send_evt(o.event, l, r);
 		}
 		tk_set_flg(flg_line, FLG_LINE_ALIVE);
 
 #if S3_DEBUG_PRINT
-		if (++n % (500 / LINE_PERIOD_MS) == 0)
-			S3_PRINTF("[S3] adc %d/%d barcode=%d (%s) offset=%d%% steer=%d on=%d\n", l, r,
+		if (++n % (500 / LINE_PERIOD_MS) == 0) {
+			char last[8];				/* repeated every line so a missed/late console still shows it */
+			for (int i = 0; i < 7; i++) last[i] = s3_last_barcode[i];
+			last[7] = 0;
+			S3_PRINTF("[S3] adc %d/%d barcode=%d (%s) offset=%d%% steer=%d on=%d  last read: %s\n", l, r,
 				  barcode_raw(), barcode_is_black() ? "black" : "white",
-				  (int)(o.offset * 100), (int)o.steering_corr, o.on_line);
+				  (int)(o.offset * 100), (int)o.steering_corr, o.on_line,
+				  s3_barcode_count == 0 ? "none yet" : (last[0] ? last : "FAILED"));
+		}
 #endif
 		period_wait();
 	}

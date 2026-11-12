@@ -2,7 +2,7 @@
  * imu_algo.h - hardware-free IMU logic: calibration maths, pitch filter,
  * Region A (motion classification) and Region B (hump measurement) of statechart 6.3.
  *
- * No FreeRTOS, no Pico SDK: it is unit-tested on a PC (test/test_imu_algo.c).
+ * No kernel, no hardware: it is unit-tested on a PC (testing/subsystem4/pc/test_imu_algo.c).
  * All inputs are already in the ROBOT frame (X forward, Y left, Z up) and in g / deg/s.
  */
 #ifndef IMU_ALGO_H

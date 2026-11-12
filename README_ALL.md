@@ -23,7 +23,7 @@ the run starts when the **GP20** start button is pressed (S5's `drv_button.c`) o
 ## Install
 1. Replace the five `app_program/subsystemN/` and `testing/subsystemN/` folders. Paste `TEAM_ALL.md` into `TEAM.md`.
 2. `app_main.c` should already call `subsystemN_init()` for 1..5 and then `subsystemN_start()`. **Call all five `init`s before any `start`** (each task uses the others' objects).
-3. Make the shared-config edits in `SHARED_CONFIG_CHANGES.md` (I2C1 pins, ADC pins). No Pico SDK libraries are needed: the drivers use the template's board library (`<bsp/libbsp.h>`) and the kernel's I2C / ADC devices.
+3. Make the shared-config edits in `SHARED_CONFIG_CHANGES.md` (I2C0 pins and timeout). No Pico SDK libraries are needed: the drivers use the template's board library (`<bsp/libbsp.h>`), the kernel's I2C device, and RP2040 registers directly (ADC, encoders, ultrasonic).
 4. Subsystem 1 only works after the `mqtt_utk.c` patch in `app_program/subsystem1/PATCH_mqtt_utk.md` (needs the instructor's agreement and `NET=lwip MQTT=1`).
 5. If the compiler complains, look at the `sN_port.h` file of that subsystem first (console print, microsecond timer).
 
@@ -37,8 +37,8 @@ the run starts when the **GP20** start button is pressed (S5's `drv_button.c`) o
 5. Set `S2_BENCH_SCRIPT 0`, all `*_DEBUG_PRINT 0`, `VC_WATCHDOG_ENABLE 1` at integration.
 
 ## Things you must settle with the team (I had to assume them)
-* **Barcode format**: the design review does not say it. `line_config.h` assumes 4 black bars, bar 1 narrow (reference), bars 2-4 wide = 1 / narrow = 0; codes 0 left, 1 right,
-  2 straight, 3 U-turn, 7 stop. Change `bd_decode` / the code table when you have the real briefing.
+* **Barcode format**: Code 39 (`*A*` style, read in either direction), from the Barcode & Line Specification. `line_config.h`: A = left, B = right,
+  C = straight, D = U-turn. No barcode means STOP (`NAV_STOP` exists in `vc_msgs.h` but the decoder never sends it). See `docs/README_subsystem3.md`.
 * **Pins**: Figure 4.1 vs the pin table disagree (IMU, ultrasonic, servo). I used the figure. The Fritzing picture seems to put the IMU on GP0/GP1, which the debug probe uses with `CRASH_REPORT=1`.
 * **Priorities**: the TEAM.md bands make S1 highest and S5 lowest (the opposite of the design doc, where Motion Control is highest). It works because every task sleeps between periods, but a
   stop takes IMU 10 ms + VC tick 20 ms + S2 10 ms, up to about 40 ms against the 50 ms NFR6. If you can, give `vc_task` a better priority by team agreement.
@@ -46,6 +46,8 @@ the run starts when the **GP20** start button is pressed (S5's `drv_button.c`) o
 * **Obstacle bypass** uses a fixed obstacle depth (`VC_OBST_DEPTH_MM`, the ultrasonic sensor cannot measure it) and a 7-step turn / move sequence; tune the dimensions on the track.
 * **Hump slow-down**: the IMU reports a hump only after it ends, so the VC slows when the IMU says CLIMBING and speeds up on the HUMP event.
 * **Line lost**: RECOVER drives slowly straight; there is no sweep search (add one in `vc_logic.c` if the track needs it).
+  With `LINE_STRADDLE 1` (sensors outside the line, the current setting) S3 can never tell "lost" from "centred" (both white), so it never
+  sends LINE_LOST and RECOVER is never entered.
 * **Link lost** (statechart 6.5 LINK_LOST) is not implemented: the robot keeps running its mission when WiFi drops, as NFR5 requires, but the VC is never told.
 * The IMU yaw cross-check for U-turns is not implemented (S4 publishes turn rate, not yaw).
 
@@ -53,5 +55,6 @@ the run starts when the **GP20** start button is pressed (S5's `drv_button.c`) o
 * Pure logic is tested on a PC: S1 21 checks, S2 36, S3 29, S4 (its own suite), S5 47 (state machine, bypass sequence, watchdog, scan geometry).
 * All five link together and run on a PC against a fake kernel and fake hardware: boot, self-test, MQTT start, a motor stall becoming a FAULT, and RESET back to IDLE
   (the PC has no encoders, so the stall is expected).
-* **Never built for the Pico, against the course template, or run on a robot.** I never saw `app.h`, `app_main.c`, the build files or `mqtt_utk.c`. Every gain, threshold and dimension is a
-  placeholder to tune on the real car.
+* Built for the Pico with the course template and run on the bench car (Nov 2026): line following, barcodes, obstacle stop and the start button work.
+  The S1 hooks are applied in `mqtt_utk.c` (lines marked SE18). Gains, thresholds and dimensions are bench values; tune them on the track.
+* The PC test for S3 (`testing/subsystem3/pc/test_s3.c`) still targets the old 4-bar decoder API and does not build against the current Code 39 decoder.

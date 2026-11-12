@@ -2,8 +2,8 @@
  *	drv_imu.c
  *	Subsystem 4 -- MPU-6050 family driver, through the kernel's I2C device driver (device "iica" = I2C0, GP0 SDA / GP1 SCL).
  *
- *	The kernel's driver is configured in device/i2c/sysdepend/rp2040/i2c_cnf_sysdep.h; its I2C1 pins
- *	must be GP0 (SDA) / GP1 (SCL) for I2C0: see SHARED_CONFIG_CHANGES.md. Only imu_task calls this file.
+ *	The kernel's driver is configured in device/i2c/sysdepend/rp2040/i2c_cnf_sysdep.h: its I2C0 pins
+ *	must be GP0 (SDA) / GP1 (SCL), see SHARED_CONFIG_CHANGES.md. Only imu_task calls this file.
  */
 #include "subsystem4.h"		/* kernel types first: s4_port.h uses tk_get_otm / SYSTIM */
 #include "drv_imu.h"
@@ -77,9 +77,9 @@ static void diagnose(void)
 	if (done) return;			/* once per power-up is enough */
 	done = true;
 	S4_PRINTF("[IMU] last error code = %d (E_IO -> device did not acknowledge; E_TMOUT -> bus stuck / no pull-ups)\n", s_last_er);
-	/* a probe that times out takes ~1 s: do not scan 112 addresses in that case */
+	/* a probe that times out takes DEVCNF_I2C0_TMO (10 ms) or more: do not scan 112 addresses on a stuck bus */
 	if (tk_srea_dev(s_dd, 0x68, &b, 1, &asz) >= E_OK) found = 1;
-	if ((uint32_t)(S4_US32() - t0) > 300000u) {
+	if ((uint32_t)(S4_US32() - t0) > 8000u) {
 		S4_PRINTF("[IMU] probes time out slowly: SDA/SCL stuck low or not connected. Skipping bus scan.\n");
 		return;
 	}

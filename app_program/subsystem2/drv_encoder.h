@@ -18,8 +18,8 @@
 
 int	enc_init(void);					/* 0 = interrupt running, < 0 = kernel error (use enc_poll) */
 void	enc_poll(void);					/* fallback: sample the four pins once */
-void	enc_read(int32_t *left, int32_t *right);
+void	enc_read(int32_t *left, int32_t *right);	/* cumulative edge counts, forward positive */
 unsigned enc_pins(void);				/* debug: the four pin levels, bit0 = GP2 (L_A) ... bit3 = GP5 (R_B) */
-unsigned enc_irq_count(void);			/* debug: how many edge interrupts since boot */	/* cumulative edge counts, forward positive */
+unsigned enc_irq_count(void);			/* debug: how many edge interrupts since boot */
 
 #endif

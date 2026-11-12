@@ -3,8 +3,10 @@
 
 A decoded barcode is only **remembered** (`nav_has`). The car keeps line following. At the next JUNCTION event it
 drives `VC_JUNCTION_ADVANCE_MM` forward (so the axle is at the junction centre) and then turns: LEFT +90, RIGHT -90,
-UTURN 180; STRAIGHT drives on; STOP completes the mission at once. A junction with no barcode pending is ignored, and an
-unused command expires after `VC_NAV_EXPIRE_MS`.
+UTURN 180; STRAIGHT drives on. (A STOP command would complete the mission, but no barcode letter maps to STOP.) Every
+junction first pauses `VC_JUNCTION_PAUSE_MS`; with `VC_JUNCTION_PAUSE_ALWAYS 1` (current) the car also pauses at a junction
+with no barcode pending and then drives straight on (0 = such junctions are ignored). An unused command expires after
+`VC_NAV_EXPIRE_MS`.
 
 ## Bench obstacle stop and servo adjustment (8 Nov)
 

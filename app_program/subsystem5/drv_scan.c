@@ -168,3 +168,21 @@ void ultra_init(void)
 		S5_PRINTF("[S5] ultrasonic ok on TRIG GP%d / ECHO GP%d\n", us_trig, us_echo);
 	}
 }
+
+/* ---- start / stop button ---- */
+void button_init(void)
+{
+	const int pins[2] = { PIN_BTN_A, PIN_BTN_B };
+	for (int i = 0; i < 2; i++) {
+		int p = pins[i];
+		SIO_OE_CLR = 1u << p;
+		PAD(p) = (1u << 6) | (1u << 1) | (1u << 3);	/* input enable, schmitt, pull-UP (the button pulls to GND) */
+		IO_CTRL(p) = 5u;
+	}
+}
+
+int button_down(void)
+{
+	unsigned in = SIO_IN;
+	return !(in & (1u << PIN_BTN_A)) || !(in & (1u << PIN_BTN_B));
+}

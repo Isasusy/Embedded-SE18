@@ -68,7 +68,7 @@ Internal to S5: `flg_scan`, `mbf_obstacle`. Shared structs live in `subsystem5/v
 ## 6. Kernel object budget
 | Object | S1 | S2 | S3 | S4 | S5 | Total |
 |---|---|---|---|---|---|---|
-| Task | 0 | 1 | 2 | 1 | 2 | 6 (limit 32) |
+| Task | 0 | 2 | 2 | 1 | 2 | 7 (limit 32) |
 | Event flag | | 1 | 1 | 1 | 1 | 4 (16) |
 | Message buffer | 1 | 1 | | | 5 | 7 (12; the WiFi/USB tasks use a few) |
 | Mutex | | 1 | 1 | | | 2 (12) |

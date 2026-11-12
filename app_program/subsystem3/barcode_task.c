@@ -25,7 +25,7 @@ volatile unsigned s3_barcode_count;
 
 /* for line_task: is the barcode sensor in the middle of a code (then a "junction" is really the bars)? */
 volatile bool s3_bar_active;
-volatile uint32_t s3_bar_last_edge_ms;
+volatile bool s3_bar_finish_req;		/* set by line_task at a junction: end the open read now */
 
 static void keep(const bd_read_t *rd, bool ok)
 {
@@ -59,15 +59,20 @@ void barcode_task(INT stacd, void *exinf)
 			prev_us = e.t_us;
 #endif
 			bd_edge_p(&b, e.t_us, e.black, e.peak);
-			s3_bar_last_edge_ms = s3_now_ms();
+		}
+		bd_result_t r;
+		if (s3_bar_finish_req) {			/* junction reached: the barcode is behind us */
+			s3_bar_finish_req = false;
+			r = bd_finish(&b, &rd);
+		} else {
+			r = bd_poll(&b, S3_US32(), &rd);
 		}
 		s3_bar_active = b.active;
-
-		bd_result_t r = bd_poll(&b, S3_US32(), &rd);
 		if (r == BD_VALID) {
 			keep(&rd, true);
-			S3_PRINTF("[S3] >> BARCODE \"%s\" -> %s%s  (pattern %s, narrow %d ms)\n", rd.text, nav_name(rd.nav),
-				  rd.reversed ? " (read backwards)" : "", rd.pattern, (int)(rd.narrow_us / 1000u));
+			S3_PRINTF("[S3] >> BARCODE \"%s\" -> %s%s%s  (pattern %s, narrow %d ms, by %s)\n", rd.text, nav_name(rd.nav),
+				  rd.reversed ? " (read backwards)" : "", rd.guard_damaged ? " (one * damaged)" : "",
+				  rd.pattern, (int)(rd.narrow_us / 1000u), rd.method ? rd.method : "?");
 			if (rd.nav >= 0 && mbf_nav_cmd > 0) {
 				nav_cmd_t m = { rd.nav, (int32_t)rd.text[0], s3_now_ms() };
 				tk_snd_mbf(mbf_nav_cmd, &m, sizeof m, TMO_POL);
@@ -76,6 +81,15 @@ void barcode_task(INT stacd, void *exinf)
 			keep(&rd, false);
 			S3_PRINTF("[S3] barcode NOT decoded: %d elements, pattern %s (narrow %d ms)\n",
 				  rd.n_elements, rd.pattern, (int)(rd.narrow_us / 1000u));
+#if S3_BARCODE_DUMP
+			/* every stripe as B(ar)/s(pace) duration in ms : peak reading, 10 per line (one Code 39 character + gap),
+			   so the real barcode's thin / medium / thick sizes can be read off the log */
+			for (int i = 0; i < b.n; i++) {
+				if (i % 10 == 0) S3_PRINTF("%s[S3]   stripes %d-%d:", i ? "\n" : "", i, i + 9 < b.n ? i + 9 : b.n - 1);
+				S3_PRINTF(" %c%d:%d", (i % 2 == 0) ? 'B' : 's', (int)(b.w[i] / 1000u), (int)b.pk[i]);
+			}
+			if (b.n > 0) S3_PRINTF("\n");
+#endif
 		}
 		tk_dly_tsk(1);
 	}
