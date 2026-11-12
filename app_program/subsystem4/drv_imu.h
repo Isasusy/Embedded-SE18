@@ -5,10 +5,9 @@
  *	OWNERSHIP (TEAM.md section 3): I2C0 and pins GP0 / GP1 belong to subsystem 4 (the Fritzing wiring).
  *	Only imu_task may call these functions.
  *
- *	Pins follow Figure 4.1 of the Design Review (task interaction diagram), not the Section 2 table.
- *	If the robot is really wired like the Fritzing picture (IMU on GP0/GP1) use I2C0 instead:
- *	    #define IMU_I2C i2c0   /  #define PIN_IMU_SDA 0   /  #define PIN_IMU_SCL 1
- *	(GP0 = SDA, GP1 = SCL) and remember GP0/GP1 are taken when the team builds with CRASH_REPORT=1.
+ *	The bus is the kernel's I2C device "iica" (I2C0). PIN_IMU_SDA / PIN_IMU_SCL below are only used to set the pin
+ *	function and pull-ups; the kernel's pins are set in i2c_cnf_sysdep.h. GP0/GP1 are taken when the team builds
+ *	with CRASH_REPORT=1.
  */
 #ifndef DRV_IMU_H
 #define DRV_IMU_H

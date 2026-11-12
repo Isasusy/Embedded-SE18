@@ -1,7 +1,9 @@
 # Patch for `lib/liblwip/sysdepend/pico_rp2040/mqtt_utk.c`
 
-I could not see `mqtt_utk.c`, so this is a description, not a diff. Agree it with the team and the instructor first
-(TEAM.md: it changes shared library code). Build with `NET=lwip MQTT=1`. Only the WiFi service task may run any of this.
+**Status: applied.** The changed lines in `mqtt_utk.c` are marked `SE18` (hook declarations, `s1_pub`, the 100 ms
+`s1_timeout` service chain, the `robot/se18/cmd` subscription and the `s1_rx` call); the original is kept as
+`mqtt_utk.c.orig`. The steps below describe what was done. It changes shared library code, so the team and the
+instructor should know (TEAM.md). Build with `NET=lwip MQTT=1`. Only the WiFi service task may run any of this.
 
 1. Add near the top: `#include "../../../../app_program/subsystem1/subsystem1.h"` (adjust the relative path), and the
    subscription to `S1_TOPIC_CMD` where the client connects (next to the heartbeat setup).

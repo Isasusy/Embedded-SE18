@@ -60,10 +60,13 @@ int tm_format_heartbeat(char *buf, int cap, uint32_t seq, uint32_t t_ms)
 	return finish(&w);
 }
 
-/* case-insensitive search for `word` in the payload */
+static int is_letter(char c) { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z'); }
+
+/* case-insensitive search for `word` as a whole word in the payload ("restart" does not contain the word "start") */
 static int has_word(const char *p, int len, const char *word)
 {
 	for (int i = 0; i < len; i++) {
+		if (i > 0 && is_letter(p[i - 1])) continue;	/* must not start in the middle of a word */
 		int k = 0;
 		while (word[k] && i + k < len) {
 			char c = p[i + k];
@@ -71,7 +74,7 @@ static int has_word(const char *p, int len, const char *word)
 			if (c != word[k]) break;
 			k++;
 		}
-		if (!word[k]) return 1;
+		if (!word[k] && !(i + k < len && is_letter(p[i + k]))) return 1;	/* ... nor end in one */
 	}
 	return 0;
 }

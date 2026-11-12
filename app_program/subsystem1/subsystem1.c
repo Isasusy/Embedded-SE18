@@ -41,7 +41,7 @@ EXPORT void s1_service(s1_publish_fn publish, void *ctx, uint32_t now_ms)
 	char buf[200];
 	robot_status_t st;
 
-	/* status at 2 Hz: the Vehicle Controller decides the rate, we publish whatever is queued (at most 4 per call) */
+	/* status at 2 Hz: the Vehicle Controller decides the rate, we publish whatever is queued (at most 2 per call) */
 	for (int i = 0; i < 2 && mbf_status > 0; i++) {	/* small bites: lwIP's MQTT output buffer is small */
 		if (tk_rcv_mbf(mbf_status, &st, TMO_POL) != (INT)sizeof st)
 			break;

@@ -198,6 +198,8 @@ void vc_step(vc_t *v, const vc_in_t *in, vc_out_t *o)
 
 	case VC_BARCODE_ACTION:
 		if (v->sub == 0) {				/* PAUSE at the junction */
+			if (in->nav && in->nav->cmd != NAV_STOP && v->junction_cmd < 0)
+				v->junction_cmd = in->nav->cmd;	/* the read finished as we reached the junction: use it */
 			if (now - v->t_sub < VC_JUNCTION_PAUSE_MS) break;
 			if (v->junction_cmd < 0 || v->junction_cmd == NAV_STRAIGHT) {
 				go(v, o, VC_CRUISE_SPEED);	/* straight on */

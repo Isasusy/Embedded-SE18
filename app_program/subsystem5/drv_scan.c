@@ -54,8 +54,9 @@ void servo_set_deg(int deg)
 
 static int us_trig = PIN_US_TRIG, us_echo = PIN_US_ECHO;
 
-/* pins the search may use: free on this robot (not IMU 0/1, encoders 2-5, motors 8-11, servo 15, IR 26-28) */
-static const unsigned char cand[] = { 16, 17, 18, 19, 20, 21, 22, 12, 13, 14, 6, 7 };
+/* pins the search may use: free on this robot (not IMU 0/1, encoders 2-5, motors 8-11, servo 15, IR 26-28, and not
+   the Robo Pico's RGB LED 18, buttons 20/21 or buzzer 22) */
+static const unsigned char cand[] = { 16, 17, 19, 12, 13, 14, 6, 7 };
 
 static void pin_out(int p)
 {
@@ -166,4 +167,22 @@ void ultra_init(void)
 	} else {
 		S5_PRINTF("[S5] ultrasonic ok on TRIG GP%d / ECHO GP%d\n", us_trig, us_echo);
 	}
+}
+
+/* ---- start / stop button ---- */
+void button_init(void)
+{
+	const int pins[2] = { PIN_BTN_A, PIN_BTN_B };
+	for (int i = 0; i < 2; i++) {
+		int p = pins[i];
+		SIO_OE_CLR = 1u << p;
+		PAD(p) = (1u << 6) | (1u << 1) | (1u << 3);	/* input enable, schmitt, pull-UP (the button pulls to GND) */
+		IO_CTRL(p) = 5u;
+	}
+}
+
+int button_down(void)
+{
+	unsigned in = SIO_IN;
+	return !(in & (1u << PIN_BTN_A)) || !(in & (1u << PIN_BTN_B));
 }

@@ -2,7 +2,7 @@
 
 Replaces the template's example `app_program/subsystem2/` (Producer). Written from the SE18 Design Review:
 FR3, FR8, NFR2, NFR6, NFR8, NFR10, statechart 6.2, messages 6.6, pins from Figure 4.1 / Section 2.
-Pins: encoders GP2-GP5, motors GP10-GP13.
+Pins: encoders GP2-GP5, motors GP8-GP11 (see `drv_motor.h`).
 
 ## Files
 ```

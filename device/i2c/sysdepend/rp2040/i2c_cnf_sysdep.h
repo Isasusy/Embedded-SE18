@@ -42,7 +42,8 @@
 #define	DEVCNF_I2C1_INTPRI	2
 
 /* Communication timeout time */
-#define	DEVCNF_I2C0_TMO		1000
+#define	DEVCNF_I2C0_TMO		10	/* ms. SE18: was 1000. Only the IMU (S4) uses I2C0; a 1 s wait on a failed
+					   read starved its 10 ms loop and tripped the VC's 100 ms ALIVE check. */
 #define	DEVCNF_I2C1_TMO		1000
 
 #endif		/* __DEV_I2C_CNF_RP2040_H__ */

@@ -1,5 +1,5 @@
 /*
- *	scan_task.c -- Obstacle Scan. Owns the servo (GP15) and the ultrasonic sensor (TRIG GP17 / ECHO GP16).
+ *	scan_task.c -- Obstacle Scan. Owns the servo (GP15) and the ultrasonic sensor (TRIG / ECHO: PIN_US_TRIG / PIN_US_ECHO in drv_scan.h).
  *	WATCH: the servo sweeps continuously left <-> right (SCAN_WATCH_SWEEP_DEG) and pings at every step. An echo inside
  *	the car's path closer than SCAN_CLOSE_MM (two pings in a row at that angle) sets FLG_SCAN_CLOSE, and the servo then
  *	stays pointed at the obstacle until it has gone.
@@ -61,7 +61,7 @@ void scan_task(INT stacd, void *exinf)
 	int ang = lo, dir = +1;			/* where the sweep is, and which way it is going */
 	bool tracking = false;			/* parked on an obstacle until it has gone */
 	int track_ang = 0, clear_pings = 0, no_echo = 0, last_d = 0;
-	unsigned n_ping = 0; (void)n_ping;
+	unsigned n_ping = 0; (void)n_ping; (void)no_echo;
 	(void)stacd; (void)exinf;
 
 	servo_init();
@@ -120,13 +120,10 @@ void scan_task(INT stacd, void *exinf)
 			}
 		}
 
+		/* No echo for a while only means nothing is in range (an open track). The wiring search runs ONCE, at
+		   power-up in ultra_init(): running it here, while driving, busy-waited ~1 s with no obstacle watch and
+		   drove unclaimed pins as outputs. */
 		no_echo = (last_d <= 0) ? no_echo + 1 : 0;
-		if (no_echo == 60 || (no_echo > 60 && no_echo % 300 == 0)) {	/* still nothing: look for the wiring again */
-			if (ultra_autodetect()) {
-				S5_PRINTF("[S5] ultrasonic FOUND: TRIG=GP%d ECHO=GP%d\n", ultra_trig_pin(), ultra_echo_pin());
-				no_echo = 0;
-			}
-		}
 #if S5_ULTRA_PRINT
 		if (++n_ping % 10 == 0) {
 			int shown = tracking ? track_ang : ang;
