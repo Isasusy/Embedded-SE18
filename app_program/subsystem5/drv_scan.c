@@ -43,6 +43,11 @@ void servo_set_deg(int deg)
 	pwm_set_cc(PIN_SERVO, (us * 3125u) / 1000u);		/* 3.125 ticks per microsecond */
 }
 
+void servo_off(void)
+{
+	pwm_set_cc(PIN_SERVO, 0);				/* line held low: no pulses */
+}
+
 /* ---- ultrasonic: plain GPIO through the RP2040 registers (no SDK, no libbsp GPIO semantics to guess) ---- */
 #define IO_CTRL(p)	(*(volatile unsigned int *)(0x40014000u + 8u * (p) + 4u))	/* IO_BANK0 GPIOn_CTRL, FUNCSEL 5 = SIO */
 #define PAD(p)		(*(volatile unsigned int *)(0x4001C000u + 4u + 4u * (p)))	/* PADS_BANK0 GPIOn */
@@ -184,4 +189,10 @@ int button_down(void)
 {
 	unsigned in = SIO_IN;
 	return !(in & (1u << PIN_BTN_A)) || !(in & (1u << PIN_BTN_B));
+}
+
+unsigned button_raw(void)
+{
+	unsigned in = SIO_IN;
+	return (!(in & (1u << PIN_BTN_A)) ? 1u : 0u) | (!(in & (1u << PIN_BTN_B)) ? 2u : 0u);
 }

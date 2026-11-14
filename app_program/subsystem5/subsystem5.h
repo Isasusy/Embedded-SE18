@@ -37,6 +37,8 @@ IMPORT ID	mbf_status;
 /* Obstacle Scan <-> VC (internal to S5) */
 #define FLG_SCAN_REQUEST	0x1		/* VC -> scan_task: start a sweep           */
 #define FLG_SCAN_CLOSE		0x2		/* scan_task -> VC: something close ahead   */
+#define FLG_SCAN_RUN		0x4		/* VC -> scan_task: level, set while the car is running (start/stop
+						   button or MQTT START); clear = servo parked and released, no pings */
 IMPORT ID	flg_scan;
 IMPORT ID	mbf_obstacle;			/* scan_task -> VC: obstacle_t, depth 2     */
 

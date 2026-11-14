@@ -85,7 +85,8 @@
 #define SCAN_SETTLE_MS		60		/* servo settling time per angle */
 #define SERVO_US_MIN		500		/* SG90 pulse widths */
 #define SERVO_US_MAX		2500
-#define SERVO_TRIM_DEG		0		/* adjust if "straight ahead" is not 0 (try +-5, +-10 ...) */
+#define SERVO_TRIM_DEG		(-20)		/* adjust if "straight ahead" is not 0 (+ = turn left / anticlockwise, - = right / clockwise).
+						   -30: the horn pointed ~30 deg too far left */
 #define SERVO_REVERSE		0		/* 1 = swap left and right if + turns the sensor to the robot's right */
 #define S5_SERVO_TEST		0		/* 1 = at power-up sweep the servo -60..+60..0 and print the distance at each angle,
 						   to set SERVO_TRIM_DEG / SERVO_REVERSE. Set 0 when it points correctly. */

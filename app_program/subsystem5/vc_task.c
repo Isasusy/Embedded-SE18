@@ -44,6 +44,7 @@ void vc_task(INT stacd, void *exinf)
 	vc_out_t out;
 	remote_cmd_t remote; nav_cmd_t nav; line_evt_t line; imu_evt_t imu; obstacle_t obst;
 	int last_state = -1;
+	bool scan_run = false;			/* mirrors FLG_SCAN_RUN (starts clear) */
 #if VC_AUTOSTART_MS && !VC_START_BUTTON
 	bool autostarted = false;
 #endif
@@ -163,6 +164,14 @@ void vc_task(INT stacd, void *exinf)
 			obstacle_t stale;
 			while (tk_rcv_mbf(mbf_obstacle, &stale, TMO_POL) > 0) { }	/* drop an old result */
 			tk_set_flg(flg_scan, FLG_SCAN_REQUEST);
+		}
+		{	/* the scan task (servo + ultrasonic) only works while the car is running */
+			bool run = v.state >= VC_LINE_FOLLOW && v.state <= VC_RECOVER;
+			if (run != scan_run) {
+				scan_run = run;
+				if (run) tk_set_flg(flg_scan, FLG_SCAN_RUN);
+				else     tk_clr_flg(flg_scan, ~(UINT)FLG_SCAN_RUN);
+			}
 		}
 		if (out.send_status && mbf_status > 0)
 			tk_snd_mbf(mbf_status, &out.status, sizeof out.status, TMO_POL);	/* a full buffer drops it; telemetry never blocks us */

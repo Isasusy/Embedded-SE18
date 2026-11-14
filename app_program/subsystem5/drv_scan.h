@@ -12,7 +12,8 @@
 #define PIN_US_ECHO	17
 
 void	servo_init(void);
-void	servo_set_deg(int deg);		/* -90 .. +90, + = left, 0 = straight ahead */
+void	servo_set_deg(int deg);		/* -90 .. +90, + = left, 0 = straight ahead (also re-arms after servo_off) */
+void	servo_off(void);		/* stop the pulses: the servo holds no position and draws no stall current */
 void	ultra_init(void);		/* registers the default pins; if nothing answers, searches for the wiring (see below) */
 int	ultra_ping_mm(void);		/* distance in mm, or -1 for no echo; blocks up to ~25 ms */
 int	ultra_autodetect(void);		/* try every TRIG/ECHO pair among the free pins; 1 and the pins are kept if a sensor answers */
@@ -24,5 +25,6 @@ int	ultra_echo_pin(void);
 #define PIN_BTN_B	21
 void	button_init(void);		/* both pins as inputs with pull-ups */
 int	button_down(void);		/* 1 while either button is held */
+unsigned button_raw(void);		/* diagnostic: bit0 = GP20 low (held), bit1 = GP21 low (held) */
 
 #endif

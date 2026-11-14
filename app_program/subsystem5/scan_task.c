@@ -81,8 +81,39 @@ void scan_task(INT stacd, void *exinf)
 	}
 #endif
 
+	/* idle until the car is started (FLG_SCAN_RUN, set by vc_task) */
+	servo_off();
+	bool active = false;
+
 	for (;;) {
 		UINT ptn;
+		bool run = tk_wai_flg(flg_scan, FLG_SCAN_RUN, TWF_ORW, &ptn, TMO_POL) == E_OK;	/* level: not consumed */
+		if (!run) {
+			if (active) {			/* just stopped: park straight ahead, then let go of the servo */
+				active = false;
+				tracking = false;
+				ang = lo; dir = +1;
+				no_echo = 0; last_d = 0;
+				servo_set_deg(SCAN_WATCH_DEG);
+				tk_dly_tsk(300);
+				servo_off();
+				tk_clr_flg(flg_scan, ~(UINT)(FLG_SCAN_CLOSE | FLG_SCAN_REQUEST));	/* nothing stale on restart */
+#if S5_ULTRA_PRINT
+				S5_PRINTF("[S5] scan: idle (car stopped)\n");
+#endif
+			}
+			tk_dly_tsk(SCAN_PERIOD_MS);
+			continue;
+		}
+		if (!active) {				/* just started: re-arm the servo and let it reach the watch angle */
+			active = true;
+			servo_set_deg(SCAN_WATCH_DEG);
+			tk_dly_tsk(300);
+#if S5_ULTRA_PRINT
+			S5_PRINTF("[S5] scan: active\n");
+#endif
+		}
+
 		if (tk_wai_flg(flg_scan, FLG_SCAN_REQUEST, TWF_ORW | TWF_BITCLR, &ptn, TMO_POL) == E_OK) {
 			do_sweep();			/* the VC stopped the car and wants the obstacle profiled */
 			tk_clr_flg(flg_scan, ~(UINT)FLG_SCAN_CLOSE);
