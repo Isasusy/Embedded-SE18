@@ -64,7 +64,7 @@ void motion_task(INT stacd, void *exinf)
 	mc_out_t	out;
 	motion_cmd_t	cmd;
 	int32_t		enc_l, enc_r, last_l, last_r;
-	uint32_t	loops = 0, last_print_ms = 0;
+	uint32_t	last_print_ms = 0;
 	unsigned	exec_max_us = 0;
 #if S2_BENCH_SCRIPT
 	unsigned	step = 0, step_cycles = 0;
@@ -173,7 +173,6 @@ void motion_task(INT stacd, void *exinf)
 		s2_motion_debug.pwm_r = out.pwm_r;
 		s2_motion_debug.exec_max_us = exec_max_us;
 		s2_motion_debug.late_max_us = s_late_max_us;
-		loops++;
 #if S2_DEBUG_PRINT
 		uint32_t now = s2_now_ms();
 		if (now - last_print_ms >= 250u) {
@@ -185,7 +184,6 @@ void motion_task(INT stacd, void *exinf)
 				  (int)enc_l, (int)enc_r, enc_pins(), enc_irq_count(), exec_max_us, s_late_max_us);
 		}
 #endif
-		(void)loops;
 		period_wait();
 	}
 }

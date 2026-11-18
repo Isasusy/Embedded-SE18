@@ -204,7 +204,6 @@ void vc_step(vc_t *v, const vc_in_t *in, vc_out_t *o)
 				enter(v, o, VC_LINE_FOLLOW, now);
 			} else {				/* drive to the junction centre first */
 				manoeuvre(v, o, MOTION_CMD_MOVE, 0, VC_JUNCTION_ADVANCE_MM);
-				v->settle = VC_SETTLE_TICKS;
 				v->sub = 1;
 			}
 			break;
@@ -218,7 +217,6 @@ void vc_step(vc_t *v, const vc_in_t *in, vc_out_t *o)
 				case NAV_RIGHT:	manoeuvre(v, o, MOTION_CMD_TURN, -VC_TURN_ANGLE, 0); break;
 				default:	manoeuvre(v, o, MOTION_CMD_UTURN, 0, 0); break;
 				}
-				v->settle = VC_SETTLE_TICKS;
 			} else {
 				go(v, o, VC_CRUISE_SPEED);
 				enter(v, o, VC_LINE_FOLLOW, now);

@@ -13,8 +13,6 @@
 #include "vc_config.h"
 #include "drv_scan.h"
 #include "s5_port.h"
-#if VC_WATCHDOG_ENABLE
-#endif
 
 static uint32_t s_next_us;
 
