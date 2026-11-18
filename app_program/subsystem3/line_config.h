@@ -4,7 +4,6 @@
 #ifndef LINE_CONFIG_H
 #define LINE_CONFIG_H
 
-/* ---- line following (FR1, NFR1: 5 ms) ---- */
 #define LINE_PERIOD_MS		5
 #define LINE_CAL_MS		2000		/* calibration window: rock the robot across the line by hand */
 #define LINE_CAL_MIN_RANGE	400		/* ADC counts (0..4095); smaller spread = calibration rejected, defaults used */
@@ -85,6 +84,6 @@
 #define BAR_CHAR_STRAIGHT	'C'
 #define BAR_CHAR_UTURN		'D'
 
-#define S3_DEBUG_PRINT		1		/* print events and a 2 Hz line; 0 at integration */
+#define S3_DEBUG_PRINT		1
 
 #endif

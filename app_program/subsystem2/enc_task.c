@@ -14,7 +14,7 @@ void enc_task(INT stacd, void *exinf)
 
 	err = enc_init();
 	if (err == 0) {
-		for (;;) tk_slp_tsk(TMO_FEVR);		/* the ISR does all the work */
+		for (;;) tk_slp_tsk(TMO_FEVR);
 	}
 	S2_PRINTF("[S2] encoder interrupt failed (error %d): polling at 1 kHz instead\n", err);
 	for (;;) {

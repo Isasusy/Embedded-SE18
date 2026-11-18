@@ -7,7 +7,6 @@
 #ifndef IMU_CONFIG_H
 #define IMU_CONFIG_H
 
-/* ------------------------------------------------------------------ timing / bus */
 #define IMU_PERIOD_MS            10        /* NFR3: 100 Hz                                   */
 /* Bus speed and per-transfer timeout belong to the kernel's I2C driver, not to this file:
  * device/i2c/sysdepend/rp2040/i2c_cnf_sysdep.h, DEVCNF_I2C0_TMO (10 ms, so a dead bus cannot hang the 10 ms loop). */
@@ -38,18 +37,15 @@
 #define IMU_PITCH_RATE_SIGN      (-1.0f)
 #endif
 
-/* ------------------------------------------------------------------ CALIBRATE state */
 #define IMU_CAL_SAMPLES          200       /* 2 s at 100 Hz                                  */
 #define IMU_CAL_MAX_TRIES        5
 #define IMU_CAL_MAX_GYRO_STD_DPS 1.5f      /* above this the robot was moved during calibration */
 #define IMU_CAL_G_MIN            0.85f     /* sanity: stationary |accel| must be ~1 g        */
 #define IMU_CAL_G_MAX            1.15f
 
-/* ------------------------------------------------------------------ pitch filter */
 #define IMU_COMP_ALPHA           0.98f     /* complementary filter: gyro weight per step     */
 #define IMU_ACC_TRUST_BAND_G     0.25f     /* ignore accel for pitch when | |a| - 1 g | > this */
 
-/* ------------------------------------------------------------------ Region A: motion classification */
 #define IMU_MOVE_START_MM_S      20.0f     /* speed above this = moving                      */
 #define IMU_MOVE_STOP_MM_S       10.0f     /* speed below this = stopped (hysteresis)        */
 #define IMU_QUIET_GYRO_DPS       3.0f      /* fallback "stopped" test when no motion_status  */
@@ -67,13 +63,11 @@
 #define IMU_CLASS_DEBOUNCE       3         /* samples a new class must persist (30 ms)       */
 #define IMU_PERIODIC_REPORT_MS   500       /* periodic MOTION_CLASS status event, 0 = off    */
 
-/* ------------------------------------------------------------------ SUDDEN_IMPACT */
 #define IMU_SHOCK_G              2.0f      /* accel magnitude above this = collision         */
 #define IMU_SHOCK_ARM_MS         500       /* ignore shocks this long after start-up         */
 #define IMU_IMPACT_MIN_HOLD_MS   200       /* stay in SUDDEN_IMPACT at least this long (one event per hit) */
 #define IMU_IMPACT_HOLD_MS       1500      /* leave SUDDEN_IMPACT after this even if moving  */
 
-/* ------------------------------------------------------------------ Region B: hump measurement */
 #define IMU_HUMP_START_DEG       6.0f      /* pitch above this begins a climb                */
 #define IMU_HUMP_TOP_DEG         3.0f      /* pitch back below this = top reached            */
 #define IMU_HUMP_DESC_DEG        4.0f      /* pitch below -this = descending                 */
@@ -85,12 +79,9 @@
 #define IMU_HUMP_LOCKOUT_MS      300       /* "reset window" after a hump                    */
 #define IMU_MAX_STEP_MM          30.0f     /* larger odometer jumps are treated as resync    */
 
-/* task stack: TASK_STACK_SIZE in app.h (shared by every task) */
 
-/* ------------------------------------------------------------------ bench helpers (subsystem 4 only) */
 #ifndef S4_DEBUG_PRINT
-#define S4_DEBUG_PRINT		1	/* 1 = print a status line 4x/s and (until the Vehicle Controller exists)
-					       the events. Set 0 at integration to keep the 10 ms loop quiet. */
+#define S4_DEBUG_PRINT		1
 #endif
 #ifndef S4_FAKE_SPEED_MM_S
 #define S4_FAKE_SPEED_MM_S	100.0f	/* speed assumed while Motion Control does not exist yet.

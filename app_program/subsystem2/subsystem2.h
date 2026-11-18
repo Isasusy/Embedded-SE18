@@ -20,7 +20,7 @@
  *  sizeof(cmd), TMO_POL).  Motion Control reads one command per 10 ms loop.
  * --------------------------------------------------------------------- */
 #define S2_CMD_MAXMSZ		((INT)sizeof(motion_cmd_t))
-#define S2_CMD_BUFSZ		(4 * (sizeof(motion_cmd_t) + 4))	/* depth 4 (Section 6.6) */
+#define S2_CMD_BUFSZ		(4 * (sizeof(motion_cmd_t) + 4))
 IMPORT ID	mbf_motion_cmd;
 
 /* ---------------------------------------------------------------------
@@ -54,7 +54,6 @@ IMPORT motion_status_t	app_motion;
 IMPORT ID		mtx_line;
 IMPORT line_status_t	app_line;
 
-/* Private to subsystem 2 */
 typedef struct {			/* read-only snapshot for the debugger / tests */
 	int	state, fault;
 	int	enc_l, enc_r;

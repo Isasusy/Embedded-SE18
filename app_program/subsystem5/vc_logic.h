@@ -21,7 +21,7 @@ typedef struct {
 	float		max_hump_mm;
 	int		speed_cmd;
 	int		step, settle;			/* OBSTACLE_AVOID sequence position, settle ticks */
-	int		sub;				/* OBSTACLE_AVOID: 0 wait scan, 1 bypass steps, 2 search line */
+	int		sub;
 	obstacle_t	ob;
 	bool		started, sp_line_found;
 	bool		bench_restart;			/* bench: drive on again after an automatic reset */

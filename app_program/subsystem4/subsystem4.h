@@ -35,9 +35,9 @@ IMPORT ID	mbf_imu_evt;
  *        S4 sets  FLG_IMU_ALIVE  every 10 ms. VC checks it, then tk_clr_flg(flg_imu, ~FLG_IMU_ALIVE),
  *                 before feeding the watchdog (NFR10).
  * ------------------------------------------------------------------------------------------ */
-#define FLG_IMU_RESET		0x0001	/* set by VC */
-#define FLG_IMU_READY		0x0002	/* set by S4 */
-#define FLG_IMU_ALIVE		0x0004	/* set by S4 */
+#define FLG_IMU_RESET		0x0001
+#define FLG_IMU_READY		0x0002
+#define FLG_IMU_ALIVE		0x0004
 IMPORT ID	flg_imu;
 
 /* ------------------------------------------------------------------------------------------
@@ -50,9 +50,6 @@ IMPORT ID	flg_imu;
 IMPORT ID		mtx_motion;
 IMPORT motion_status_t	app_motion;
 
-/* ------------------------------------------------------------------------------------------
- * Private to subsystem 4
- * ------------------------------------------------------------------------------------------ */
 typedef struct {		/* snapshot for the bench status line and the tests */
 	motion_class_t	cls;
 	int		hump_state;

@@ -113,7 +113,7 @@ static void apply_cmd(mc_t *m, const motion_cmd_t *c)
 		start_manoeuvre(m, MC_ST_DISTANCE_MOVE);
 		m->hold = m->heading;
 		m->man_d0 = m->dist_mm;
-		m->man_dist = (float)c->distance_mm;		/* signed */
+		m->man_dist = (float)c->distance_mm;
 		sp = (sp > 0.0f) ? clampf(sp, MC_MIN_SPEED, MC_MAX_SPEED) : m->cruise_speed;
 		m->man_speed = sp;
 		break;
@@ -140,7 +140,6 @@ void mc_step(mc_t *m, const mc_in_t *in, mc_out_t *out)
 	bool fault_new = false;
 	bool reset_used = false;
 
-	/* ---- 1. measurements --------------------------------------------------------------- */
 	float dl = (float)in->dticks_l * MM_PER_TICK;
 	float dr = (float)in->dticks_r * MM_PER_TICK;
 
@@ -151,7 +150,6 @@ void mc_step(mc_t *m, const mc_in_t *in, mc_out_t *out)
 	m->v_l += MC_V_FILTER * (dl / DT - m->v_l);
 	m->v_r += MC_V_FILTER * (dr / DT - m->v_r);
 
-	/* ---- 2. stop bit / reset: checked first, every loop (NFR6) ---------------------------- */
 	if (in->stop_bit) {
 		if (m->state != MC_ST_FAULT_STOP || m->fault == MC_FAULT_NONE)
 			enter_fault(m, MC_FAULT_STOP_BIT);
@@ -164,11 +162,9 @@ void mc_step(mc_t *m, const mc_in_t *in, mc_out_t *out)
 		reset_used = true;
 	}
 
-	/* ---- 3. new command (ignored while in FAULT_STOP) ------------------------------------ */
 	if (in->cmd && m->state != MC_ST_FAULT_STOP)
 		apply_cmd(m, in->cmd);
 
-	/* ---- 4. manoeuvre completion and timeout ---------------------------------------------- */
 	if (m->state == MC_ST_TURNING || m->state == MC_ST_U_TURN || m->state == MC_ST_DISTANCE_MOVE) {
 		if (++m->man_cycles * MC_PERIOD_MS > MC_CMD_TIMEOUT_MS) {
 			enter_fault(m, MC_FAULT_TIMEOUT);
@@ -187,17 +183,16 @@ void mc_step(mc_t *m, const mc_in_t *in, mc_out_t *out)
 			finish_manoeuvre(m);
 	}
 
-	/* ---- 5. wheel speed targets for the (possibly new) state ------------------------------- */
 	float tl = 0.0f, tr = 0.0f;
 
 	switch (m->state) {
 	case MC_ST_CRUISE: {
 		float corr;
 		if (in->line_valid) {
-			corr = in->steer_mm_s;			/* Line Follow steers */
-			m->hold = m->heading;			/* ... and we remember where we point */
+			corr = in->steer_mm_s;
+			m->hold = m->heading;
 		} else {
-			corr = MC_KH * (m->hold - m->heading);	/* line lost: keep straight */
+			corr = MC_KH * (m->hold - m->heading);
 		}
 		corr = clampf(corr, -MC_STEER_MAX, MC_STEER_MAX);
 		tl = m->cruise_speed - 0.5f * corr;
@@ -233,7 +228,6 @@ void mc_step(mc_t *m, const mc_in_t *in, mc_out_t *out)
 		break;
 	}
 
-	/* ---- 6. PI per wheel ------------------------------------------------------------------ */
 	int pl = 0, pr = 0;
 	if (tl == 0.0f && tr == 0.0f) {
 		m->i_l = m->i_r = 0.0f;
@@ -258,12 +252,11 @@ void mc_step(mc_t *m, const mc_in_t *in, mc_out_t *out)
 		m->stall_l = m->stall_r = 0;
 	}
 	if (m->state == MC_ST_FAULT_STOP || m->state == MC_ST_STOPPED)
-		pl = pr = 0;			/* belt and braces: nothing drives in these states */
+		pl = pr = 0;
 
 	m->pwm_l = pl;
 	m->pwm_r = pr;
 
-	/* ---- 8. outputs ----------------------------------------------------------------------- */
 	out->pwm_l = pl;
 	out->pwm_r = pr;
 	out->state = m->state;

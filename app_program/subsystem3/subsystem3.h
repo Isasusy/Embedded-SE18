@@ -8,8 +8,8 @@
 #define SUBSYSTEM3_H
 
 #include "../app.h"
-#include "../subsystem2/motion_msgs.h"		/* line_status_t */
-#include "../subsystem5/vc_msgs.h"		/* nav_cmd_t, line_evt_t */
+#include "../subsystem2/motion_msgs.h"
+#include "../subsystem5/vc_msgs.h"
 
 #define S3_PRI_LINE		16		/* priority band 16-17 (TEAM.md) */
 #define S3_PRI_BARCODE		17
@@ -28,7 +28,6 @@ IMPORT ID		flg_line;
 IMPORT ID		mbf_nav_cmd;
 IMPORT ID		mbf_line_evt;
 
-/* Private to subsystem 3 */
 IMPORT void	line_task(INT stacd, void *exinf);
 IMPORT void	barcode_task(INT stacd, void *exinf);
 

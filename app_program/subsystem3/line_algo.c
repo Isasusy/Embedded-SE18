@@ -95,17 +95,17 @@ void la_step(la_t *a, int raw_l, int raw_r, la_out_t *o)
 	}
 #else
 	(void)white_before;
-	if (a->both_white_ms >= LINE_LOST_MS && !a->lost) {		/* LINE_LOST */
+	if (a->both_white_ms >= LINE_LOST_MS && !a->lost) {
 		a->lost = true;
 		o->event = LA_LINE_LOST;
-	} else if (a->lost && (bl || br)) {				/* line found again */
+	} else if (a->lost && (bl || br)) {
 		a->lost = false;
 		o->event = LA_LINE_FOUND;
 	}
 #endif
-	if (a->both_black_ms >= LINE_JUNCTION_MS) {			/* JUNCTION: report once per crossing */
+	if (a->both_black_ms >= LINE_JUNCTION_MS) {
 		if (!a->in_junction) { a->in_junction = true; if (!o->event) o->event = LA_JUNCTION; }
-		o->steering_corr = 0.0f;				/* drive straight across it */
+		o->steering_corr = 0.0f;
 		a->hold_ms = 0;
 	} else if (!(bl && br)) {
 		a->in_junction = false;

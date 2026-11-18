@@ -4,7 +4,6 @@
 #ifndef VC_CONFIG_H
 #define VC_CONFIG_H
 
-/* ---- Vehicle Controller ---- */
 #define VC_TICK_MS		20		/* event-driven plus 20 ms tick (task table) */
 /* 1 = BENCH LINE FOLLOW: creep along the line at VC_BENCH_SPEED, continuously, and do nothing else: barcodes, junctions,
    humps and the IMU are ignored (barcodes still work if VC_BENCH_BARCODES is 1). The car stops only for: an OBSTACLE seen by the ultrasonic sensor (it stops, sweeps the
@@ -69,7 +68,6 @@
 #define VC_REQUIRE_IMU		0
 #endif
 
-/* ---- Obstacle Scan ---- */
 #define SCAN_PERIOD_MS		60		/* ping period while WATCHing (task table: 60 ms per ping) */
 #define SCAN_CLOSE_MM		200		/* WATCH: closer than this twice in a row = obstacle close = STOP (adjust) */
 #define SCAN_WATCH_DEG		0		/* centre of the watch sweep: 0 = straight ahead, + = left (adjust) */

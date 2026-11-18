@@ -22,7 +22,6 @@
 #include "motion_config.h"
 #include "s2_port.h"
 
-/* ------------------------------------------------------------ 10 ms cadence without drift */
 static uint32_t s_next_us;
 static unsigned s_late_max_us;
 
@@ -35,18 +34,17 @@ static void period_wait(void)
 {
 	s_next_us += (uint32_t)MC_PERIOD_MS * 1000u;
 	int32_t delta = (int32_t)(s_next_us - S2_US32());
-	if (delta <= 0) {			/* overran: do not try to catch up */
+	if (delta <= 0) {
 		s_next_us = S2_US32();
 		return;
 	}
 	uint32_t ms = (uint32_t)delta / 1000u;
 	tk_dly_tsk(ms ? ms : 1);
-	int32_t late = (int32_t)(S2_US32() - s_next_us);	/* how late did we wake (NFR2: < 2 ms) */
+	int32_t late = (int32_t)(S2_US32() - s_next_us);
 	if (late > 0 && (unsigned)late > s_late_max_us)
 		s_late_max_us = (unsigned)late;
 }
 
-/* ------------------------------------------------------------ optional bench script */
 #if S2_BENCH_SCRIPT
 typedef struct { motion_cmd_t cmd; unsigned wait_cycles; } step_t;	/* wait_cycles 0 = until cmd_done */
 static const step_t s_script[] = {
@@ -59,7 +57,6 @@ static const step_t s_script[] = {
 #define N_STEPS	(sizeof s_script / sizeof s_script[0])
 #endif
 
-/* ------------------------------------------------------------ the task */
 void motion_task(INT stacd, void *exinf)
 {
 	mc_t		mc;
@@ -77,7 +74,7 @@ void motion_task(INT stacd, void *exinf)
 
 	motor_init();
 	motor_off();
-	enc_read(&last_l, &last_r);		/* enc_task owns enc_init() and the 1 ms polling */
+	enc_read(&last_l, &last_r);
 	mc_init(&mc);
 
 #if S2_MOTOR_TEST
@@ -85,7 +82,7 @@ void motion_task(INT stacd, void *exinf)
 	{
 		static const int pw[4][2] = { {400, 0}, {-400, 0}, {0, 400}, {0, -400} };
 		static const char *const nm[4] = { "LEFT forward", "LEFT backward", "RIGHT forward", "RIGHT backward" };
-		tk_dly_tsk(3000);			/* time to open the serial monitor */
+		tk_dly_tsk(3000);
 		for (int i = 0; i < 4; i++) {
 			int32_t a_l, a_r, b_l, b_r;
 			enc_read(&a_l, &a_r);
@@ -109,7 +106,6 @@ void motion_task(INT stacd, void *exinf)
 		uint32_t t0 = S2_US32();
 		in = (mc_in_t){0};
 
-		/* 1. encoders: edges since the last loop */
 		enc_read(&enc_l, &enc_r);
 		in.dticks_l = (int)(enc_l - last_l);
 		in.dticks_r = (int)(enc_r - last_r);
@@ -123,7 +119,6 @@ void motion_task(INT stacd, void *exinf)
 			in.reset    = (ptn & FLG_MOTION_RESET) != 0;
 		}
 
-		/* 3. one command per loop, never waiting for it */
 		if (tk_rcv_mbf(mbf_motion_cmd, &cmd, TMO_POL) == (INT)sizeof cmd)
 			in.cmd = &cmd;
 #if S2_BENCH_SCRIPT
@@ -142,7 +137,6 @@ void motion_task(INT stacd, void *exinf)
 		}
 #endif
 
-		/* 4. Line Follow's steering, if it exists and is readable right now */
 		line_status_t ls;
 		if (mtx_line > 0 && tk_loc_mtx(mtx_line, TMO_POL) == E_OK) {
 			ls = app_line;
@@ -151,29 +145,24 @@ void motion_task(INT stacd, void *exinf)
 			in.steer_mm_s = ls.steering_corr;
 		}
 
-		/* 5. control */
 		mc_step(&mc, &in, &out);
 
-		/* 6. motors: the only place they are written */
 		if (out.pwm_l == 0 && out.pwm_r == 0)
 			motor_off();
 		else
 			motor_set(out.pwm_l, out.pwm_r);
 
-		/* 7. flags back to the Vehicle Controller */
 		if (out.reset_consumed)
 			tk_clr_flg(flg_motion, ~(UINT)FLG_MOTION_RESET);
 		if (out.fault_new)
 			tk_set_flg(flg_motion, FLG_MOTION_FAULT);
 		tk_set_flg(flg_motion, FLG_MOTION_ALIVE);
 
-		/* 8. publish motion_status_t (skip this loop if a reader holds the mutex; the next loop catches up) */
 		if (tk_loc_mtx(mtx_motion, TMO_POL) == E_OK) {
 			app_motion = out.status;
 			tk_unl_mtx(mtx_motion);
 		}
 
-		/* 9. debug snapshot and 4 Hz console line */
 		unsigned exec = (unsigned)(S2_US32() - t0);
 		if (exec > exec_max_us) exec_max_us = exec;
 		s2_motion_debug.state = out.state;

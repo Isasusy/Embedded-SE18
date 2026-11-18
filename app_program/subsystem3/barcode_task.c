@@ -53,7 +53,7 @@ void barcode_task(INT stacd, void *exinf)
 			static uint32_t prev_us;
 			static unsigned lines, sec;
 			if (s3_now_ms() / 1000u != sec) { sec = s3_now_ms() / 1000u; lines = 0; }
-			if (prev_us && ++lines <= 40)		/* at most 40 lines a second */
+			if (prev_us && ++lines <= 40)
 				S3_PRINTF("[S3] bar: %s %d ms (adc %d)\n", e.black ? "white" : "BLACK",
 					  (int)((e.t_us - prev_us) / 1000u), e.peak);
 			prev_us = e.t_us;
@@ -61,7 +61,7 @@ void barcode_task(INT stacd, void *exinf)
 			bd_edge_p(&b, e.t_us, e.black, e.peak);
 		}
 		bd_result_t r;
-		if (s3_bar_finish_req) {			/* junction reached: the barcode is behind us */
+		if (s3_bar_finish_req) {
 			s3_bar_finish_req = false;
 			r = bd_finish(&b, &rd);
 		} else {

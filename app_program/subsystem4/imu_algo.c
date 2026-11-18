@@ -15,7 +15,6 @@
 #define RAD2DEG 57.29577951f
 #define DEG2RAD 0.017453293f
 
-/* ================================================================ calibration */
 void imu_cal_reset(imu_cal_t *c) { memset(c, 0, sizeof *c); }
 
 void imu_cal_add(imu_cal_t *c, float ax, float ay, float az, float gx, float gy, float gz)
@@ -50,7 +49,6 @@ imu_cal_status_t imu_cal_finish(const imu_cal_t *c, imu_cal_result_t *r)
     return IMU_CAL_OK;
 }
 
-/* ================================================================ helpers */
 static void emit(imu_algo_out_t *o, const imu_algo_t *s, imu_evt_type_t type,
                  float peak_mm, float accel_g, uint32_t now_ms)
 {
@@ -109,7 +107,6 @@ const char *hump_state_name(hump_state_t h)
     return "?";
 }
 
-/* ================================================================ init / reset */
 void imu_algo_init(imu_algo_t *s, float pitch_offset_deg, uint32_t now_ms)
 {
     memset(s, 0, sizeof *s);
@@ -132,7 +129,6 @@ void imu_algo_reset_mission(imu_algo_t *s)
     hump_clear(s);
 }
 
-/* ================================================================ Region A */
 static void region_a(imu_algo_t *s, const imu_algo_in_t *in, imu_algo_out_t *out)
 {
     const float gz_abs = mm_fabsf(in->gz_dps);
@@ -160,7 +156,7 @@ static void region_a(imu_algo_t *s, const imu_algo_in_t *in, imu_algo_out_t *out
 
     motion_class_t want;
     if (!s->moving)                              want = MOTION_CLASS_STATIONARY;
-    else if (s->cls == MOTION_CLASS_STATIONARY)  want = MOTION_CLASS_ACCELERATING; /* "speed up" */
+    else if (s->cls == MOTION_CLASS_STATIONARY)  want = MOTION_CLASS_ACCELERATING;
     else if (turning)                            want = MOTION_CLASS_TURNING;
     else if (climbing)                           want = MOTION_CLASS_CLIMBING;
     else if (descending)                         want = MOTION_CLASS_DESCENDING;
@@ -190,7 +186,6 @@ static void region_a(imu_algo_t *s, const imu_algo_in_t *in, imu_algo_out_t *out
 #endif
 }
 
-/* ================================================================ Region B */
 static void region_b(imu_algo_t *s, const imu_algo_in_t *in, float dd_mm, imu_algo_out_t *out)
 {
     const uint32_t now = in->now_ms;
@@ -200,7 +195,7 @@ static void region_b(imu_algo_t *s, const imu_algo_in_t *in, float dd_mm, imu_al
 
     case HUMP_NORMAL:
         if (s->lockout_active) {
-            if ((now - s->lockout_ms) < IMU_HUMP_LOCKOUT_MS) break;      /* "reset window" */
+            if ((now - s->lockout_ms) < IMU_HUMP_LOCKOUT_MS) break;
             s->lockout_active = false;
         }
         if (s->pitch_deg > IMU_HUMP_START_DEG) {
@@ -218,11 +213,11 @@ static void region_b(imu_algo_t *s, const imu_algo_in_t *in, float dd_mm, imu_al
         }
         break;
 
-    case HUMP_DETECTED:                       /* climb started: keep integrating until the top */
+    case HUMP_DETECTED:
         s->hump_h_mm += step_mm;
         if (s->hump_h_mm > s->hump_peak_mm) s->hump_peak_mm = s->hump_h_mm;
         if (s->pitch_deg < IMU_HUMP_TOP_DEG) {
-            s->hump_state   = HUMP_MEASURING_PEAK;      /* top reached */
+            s->hump_state   = HUMP_MEASURING_PEAK;
             s->seen_descent = false;
             s->end_samples  = 0;
         } else if ((now - s->hump_t0_ms) > IMU_HUMP_TIMEOUT_MS) {
@@ -230,7 +225,7 @@ static void region_b(imu_algo_t *s, const imu_algo_in_t *in, float dd_mm, imu_al
         }
         break;
 
-    case HUMP_MEASURING_PEAK:                 /* over the crest: wait for the descent to finish */
+    case HUMP_MEASURING_PEAK:
         s->hump_h_mm += step_mm;
         if (s->hump_h_mm > s->hump_peak_mm) s->hump_peak_mm = s->hump_h_mm;
 
@@ -238,7 +233,7 @@ static void region_b(imu_algo_t *s, const imu_algo_in_t *in, float dd_mm, imu_al
             s->seen_descent = true;
             s->end_samples  = 0;
         } else if (s->seen_descent && s->pitch_deg > -IMU_HUMP_END_DEG) {
-            if (++s->end_samples >= IMU_HUMP_DEBOUNCE) s->hump_state = HUMP_UPDATE_MAX;  /* descent complete */
+            if (++s->end_samples >= IMU_HUMP_DEBOUNCE) s->hump_state = HUMP_UPDATE_MAX;
         } else {
             s->end_samples = 0;
         }
@@ -247,27 +242,25 @@ static void region_b(imu_algo_t *s, const imu_algo_in_t *in, float dd_mm, imu_al
         break;
 
     case HUMP_UPDATE_MAX:
-        break;  /* handled right below, in the same step */
+        break;
     }
 
     if (s->hump_state == HUMP_UPDATE_MAX) {
         const float peak = s->hump_peak_mm;
         if (peak >= IMU_HUMP_MIN_HEIGHT_MM) {
-            if (peak > s->max_hump_mm) s->max_hump_mm = peak;           /* running maximum (FR9) */
+            if (peak > s->max_hump_mm) s->max_hump_mm = peak;
             emit(out, s, IMU_EVT_HUMP, peak, s->accel_mag_g, now);
         }
         hump_clear_with_lockout(s, now);
     }
 }
 
-/* ================================================================ one 10 ms step */
 void imu_algo_step(imu_algo_t *s, const imu_algo_in_t *in, imu_algo_out_t *out)
 {
     out->n = 0;
     const float    dt  = in->dt_s;
     const uint32_t now = in->now_ms;
 
-    /* ---- magnitudes ---- */
     const float a_h   = mm_sqrtf(in->ay_g * in->ay_g + in->az_g * in->az_g);
     const float a_mag = mm_sqrtf(in->ax_g * in->ax_g + a_h * a_h);
     s->accel_mag_g    = a_mag;
@@ -285,7 +278,6 @@ void imu_algo_step(imu_algo_t *s, const imu_algo_in_t *in, imu_algo_out_t *out)
         s->pitch_deg = p;
     }
 
-    /* ---- moving / stopped ---- */
     const bool quiet = mm_fabsf(in->gx_dps) < IMU_QUIET_GYRO_DPS &&
                        mm_fabsf(in->gy_dps) < IMU_QUIET_GYRO_DPS &&
                        mm_fabsf(in->gz_dps) < IMU_QUIET_GYRO_DPS &&
@@ -301,7 +293,6 @@ void imu_algo_step(imu_algo_t *s, const imu_algo_in_t *in, imu_algo_out_t *out)
         s->moving = s->quiet_s < (IMU_QUIET_MS / 1000.0f);
     }
 
-    /* ---- SUDDEN_IMPACT (highest priority) ---- */
     const bool armed = (now - s->start_ms) >= IMU_SHOCK_ARM_MS;
     if (armed && !s->impact_latched && a_mag > IMU_SHOCK_G) {
         s->impact_latched = true;
@@ -315,13 +306,12 @@ void imu_algo_step(imu_algo_t *s, const imu_algo_in_t *in, imu_algo_out_t *out)
     if (s->impact_latched) {
         const uint32_t held = now - s->impact_ms;
         if ((!s->moving && held >= IMU_IMPACT_MIN_HOLD_MS) || held >= IMU_IMPACT_HOLD_MS) {
-            s->impact_latched = false;          /* robot stopped -> back to STATIONARY            */
+            s->impact_latched = false;
             s->cls  = MOTION_CLASS_STATIONARY;
             s->cand = MOTION_CLASS_STATIONARY;
         }
     }
 
-    /* ---- distance travelled since the last step ---- */
     float dd = 0.0f;
     if (in->dist_valid) {
         if (s->have_dist) {
@@ -334,7 +324,6 @@ void imu_algo_step(imu_algo_t *s, const imu_algo_in_t *in, imu_algo_out_t *out)
         dd = mm_fabsf(in->speed_mm_s) * dt;
     }
 
-    /* ---- the two parallel regions ---- */
     if (!s->impact_latched) {
         region_a(s, in, out);
         region_b(s, in, dd, out);

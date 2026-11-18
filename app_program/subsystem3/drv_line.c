@@ -79,7 +79,6 @@ void line_adc_read(int *left, int *right)
 	*right = adc_ch(1);			/* GP27 = ADC1 */
 }
 
-/* ---- barcode: polled edge recorder ---- */
 #define RING	64u				/* power of two */
 static bar_edge_t	s_ring[RING];
 static unsigned		s_head, s_tail, s_over;

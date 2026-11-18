@@ -5,10 +5,10 @@
  */
 #include "subsystem5.h"
 
-EXPORT ID	mbf_imu_evt;	/* IF-06 (replaces S4's weak default) */
-EXPORT ID	mbf_nav_cmd;	/* IF-12 (replaces S3's weak default) */
-EXPORT ID	mbf_line_evt;	/* IF-13 */
-EXPORT ID	mbf_remote_cmd;	/* IF-15 */
+EXPORT ID	mbf_imu_evt;
+EXPORT ID	mbf_nav_cmd;
+EXPORT ID	mbf_line_evt;
+EXPORT ID	mbf_remote_cmd;
 EXPORT ID	flg_scan;
 EXPORT ID	mbf_obstacle;
 

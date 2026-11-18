@@ -6,12 +6,12 @@
  *	Every call to another subsystem's object uses TMO_POL: the controller never blocks.
  */
 #include "subsystem5.h"
-#include "../subsystem2/subsystem2.h"		/* flg_motion, mbf_motion_cmd, app_motion, mtx_motion */
-#include "../subsystem3/subsystem3.h"		/* flg_line */
-#include "../subsystem4/subsystem4.h"		/* flg_imu */
+#include "../subsystem2/subsystem2.h"
+#include "../subsystem3/subsystem3.h"
+#include "../subsystem4/subsystem4.h"
 #include "vc_logic.h"
 #include "vc_config.h"
-#include "drv_scan.h"			/* button_init, button_down */
+#include "drv_scan.h"
 #include "s5_port.h"
 #if VC_WATCHDOG_ENABLE
 #endif
@@ -44,7 +44,7 @@ void vc_task(INT stacd, void *exinf)
 	vc_out_t out;
 	remote_cmd_t remote; nav_cmd_t nav; line_evt_t line; imu_evt_t imu; obstacle_t obst;
 	int last_state = -1;
-	bool scan_run = false;			/* mirrors FLG_SCAN_RUN (starts clear) */
+	bool scan_run = false;
 #if VC_AUTOSTART_MS && !VC_START_BUTTON
 	bool autostarted = false;
 #endif
@@ -78,18 +78,18 @@ void vc_task(INT stacd, void *exinf)
 			btn_ticks = button_down() ? btn_ticks + 1 : 0;
 			if (!btn_held && btn_ticks >= 2) {			/* pressed (40 ms, debounced) */
 				btn_held = true;
-			} else if (btn_held && btn_ticks == 0) {		/* released: act now */
+			} else if (btn_held && btn_ticks == 0) {
 				btn_held = false;
 				if (v.state == VC_IDLE || v.state == VC_INIT) {
 					start_pending = true;
 					start_at = in.now_ms + VC_BUTTON_DELAY_MS;
 					S5_PRINTF("[S5] button: starting in %d ms\n", VC_BUTTON_DELAY_MS);
-				} else if (v.state == VC_FAULT) {		/* stopped: reset, then start */
+				} else if (v.state == VC_FAULT) {
 					btn_cmd = REMOTE_RESET;
 					start_pending = true;
 					start_at = in.now_ms + VC_BUTTON_DELAY_MS;
 					S5_PRINTF("[S5] button: reset, starting in %d ms\n", VC_BUTTON_DELAY_MS);
-				} else {					/* running: stop */
+				} else {
 					start_pending = false;
 					btn_cmd = REMOTE_STOP;
 					S5_PRINTF("[S5] button: STOP (press again to start)\n");
@@ -110,7 +110,7 @@ void vc_task(INT stacd, void *exinf)
 #endif
 #if VC_AUTOSTART_MS && !VC_START_BUTTON
 		if (!autostarted && !in.remote && v.state == VC_IDLE && in.now_ms >= VC_AUTOSTART_MS) {
-			remote.cmd = REMOTE_START;	/* bench start: pretend the MQTT start command arrived */
+			remote.cmd = REMOTE_START;
 			in.remote  = &remote;
 			autostarted = true;
 		}
@@ -149,7 +149,6 @@ void vc_task(INT stacd, void *exinf)
 #endif
 		vc_step(&v, &in, &out);
 
-		/* ---- outputs, safety first ---- */
 		if (out.stop_set)
 			tk_set_flg(flg_motion, FLG_MOTION_STOP);
 		if (out.stop_clear_reset) {
@@ -162,7 +161,7 @@ void vc_task(INT stacd, void *exinf)
 			tk_snd_mbf(mbf_motion_cmd, &out.motion, sizeof out.motion, TMO_POL);
 		if (out.scan_request) {
 			obstacle_t stale;
-			while (tk_rcv_mbf(mbf_obstacle, &stale, TMO_POL) > 0) { }	/* drop an old result */
+			while (tk_rcv_mbf(mbf_obstacle, &stale, TMO_POL) > 0) { }
 			tk_set_flg(flg_scan, FLG_SCAN_REQUEST);
 		}
 		{	/* the scan task (servo + ultrasonic) only works while the car is running */
@@ -174,7 +173,7 @@ void vc_task(INT stacd, void *exinf)
 			}
 		}
 		if (out.send_status && mbf_status > 0)
-			tk_snd_mbf(mbf_status, &out.status, sizeof out.status, TMO_POL);	/* a full buffer drops it; telemetry never blocks us */
+			tk_snd_mbf(mbf_status, &out.status, sizeof out.status, TMO_POL);
 #if VC_WATCHDOG_ENABLE
 		if (out.feed_watchdog)
 			s5_wdt_feed(VC_WATCHDOG_MS);

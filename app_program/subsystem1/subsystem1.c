@@ -5,12 +5,11 @@
  */
 #include "subsystem1.h"
 
-EXPORT ID	mbf_status;		/* IF-14 */
+EXPORT ID	mbf_status;
 
 /* Owned by the Vehicle Controller (S5). Weak default 0 so S1 links and runs without it. */
 __attribute__((weak)) ID	mbf_remote_cmd;
 
-/* The last barcode read, kept by the Barcode Decoder (S3, barcode_task.c). */
 IMPORT volatile char	s3_last_barcode[8];
 IMPORT volatile char	s3_last_pattern[];
 IMPORT volatile int	s3_last_nav;
@@ -29,10 +28,9 @@ EXPORT ER subsystem1_init(void)
 
 EXPORT ER subsystem1_start(void)
 {
-	return E_OK;			/* no task: the work is done by hooks inside the kernel's WiFi service task */
+	return E_OK;
 }
 
-/* ---- runs inside the WiFi service task: never block, never wait for the network ---- */
 EXPORT void s1_service(s1_publish_fn publish, void *ctx, uint32_t now_ms)
 {
 	static uint32_t last_hb_ms, hb_seq;
@@ -41,7 +39,6 @@ EXPORT void s1_service(s1_publish_fn publish, void *ctx, uint32_t now_ms)
 	char buf[200];
 	robot_status_t st;
 
-	/* status at 2 Hz: the Vehicle Controller decides the rate, we publish whatever is queued (at most 2 per call) */
 	for (int i = 0; i < 2 && mbf_status > 0; i++) {	/* small bites: lwIP's MQTT output buffer is small */
 		if (tk_rcv_mbf(mbf_status, &st, TMO_POL) != (INT)sizeof st)
 			break;
@@ -50,7 +47,6 @@ EXPORT void s1_service(s1_publish_fn publish, void *ctx, uint32_t now_ms)
 			publish(ctx, S1_TOPIC_STATUS, buf, n);
 	}
 
-	/* a new barcode read (valid or not): publish it once */
 	unsigned c1 = s3_barcode_count;
 	if (c1 != bc_seen) {
 		char code[8], pat[80];
@@ -60,14 +56,13 @@ EXPORT void s1_service(s1_publish_fn publish, void *ctx, uint32_t now_ms)
 		code[7] = 0; pat[79] = 0;
 		int nav = s3_last_nav;
 		__asm__ volatile ("dmb" ::: "memory");
-		if (s3_barcode_count == c1) {			/* not overwritten while we copied */
+		if (s3_barcode_count == c1) {
 			int n = tm_format_barcode(buf, sizeof buf, code, nav, pat, c1, now_ms);
 			if (n > 0 && publish(ctx, S1_TOPIC_BARCODE, buf, n) == 0)
-				bc_seen = c1;			/* else try again on the next call */
+				bc_seen = c1;
 		}
 	}
 
-	/* heartbeat every 1 s (NFR5), independent of the robot's state */
 	if (!hb_started) { hb_started = true; last_hb_ms = now_ms; }
 	if ((uint32_t)(now_ms - last_hb_ms) >= 1000u) {
 		last_hb_ms = now_ms;
@@ -84,5 +79,5 @@ EXPORT void s1_rx(const char *topic, const char *payload, int len)
 	if (c < 0 || mbf_remote_cmd <= 0)
 		return;
 	remote_cmd_t m = { c };
-	tk_snd_mbf(mbf_remote_cmd, &m, sizeof m, TMO_POL);	/* a full buffer drops it: the sender can resend */
+	tk_snd_mbf(mbf_remote_cmd, &m, sizeof m, TMO_POL);
 }

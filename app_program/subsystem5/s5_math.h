@@ -21,19 +21,18 @@ static inline float mm_sqrtf(float x)
 	v.f = x;
 	v.u = 0x1FBD1DF5u + (v.u >> 1);		/* first guess: halve the exponent */
 	y = v.f;
-	for (i = 0; i < 4; i++)			/* Newton-Raphson */
+	for (i = 0; i < 4; i++)
 		y = 0.5f * (y + x / y);
 	return y;
 }
 
-/* sine for any reasonable angle in radians */
 static inline float mm_sinf(float x)
 {
 	float x2;
 
 	while (x >  MM_PI) x -= 2.0f * MM_PI;
 	while (x < -MM_PI) x += 2.0f * MM_PI;
-	if (x >  MM_HALF_PI) x =  MM_PI - x;		/* fold into -pi/2 .. pi/2 */
+	if (x >  MM_HALF_PI) x =  MM_PI - x;
 	if (x < -MM_HALF_PI) x = -MM_PI - x;
 	x2 = x * x;
 	return x * (1.0f + x2 * (-1.0f / 6.0f + x2 * (1.0f / 120.0f + x2 * (-1.0f / 5040.0f + x2 * (1.0f / 362880.0f)))));

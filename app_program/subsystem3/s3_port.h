@@ -7,7 +7,7 @@
 #if APP_CONSOLE
 #define S3_PRINTF(...)		tm_printf((UB*)__VA_ARGS__)	/* the template console (USB serial) */
 #else
-#define S3_PRINTF(...)		((void)0)	/* console off (APP_CONSOLE 0 in app_console.h) */
+#define S3_PRINTF(...)		((void)0)
 #endif
 #endif
 /* RP2040 free-running 1 MHz timer, TIMERAWL (read-only register; no SDK needed) */

@@ -12,7 +12,6 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-/* ---------------- IMU -> Vehicle Controller : imu_evt_t  (IF-06, message buffer) ----------- */
 typedef enum {
 	MOTION_CLASS_STATIONARY,
 	MOTION_CLASS_ACCELERATING,

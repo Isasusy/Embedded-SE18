@@ -13,7 +13,7 @@
 #if APP_CONSOLE
 #define S2_PRINTF(...)		tm_printf((UB*)__VA_ARGS__)	/* the template console (USB serial) */
 #else
-#define S2_PRINTF(...)		((void)0)	/* console off (APP_CONSOLE 0 in app_console.h) */
+#define S2_PRINTF(...)		((void)0)
 #endif
 #endif
 

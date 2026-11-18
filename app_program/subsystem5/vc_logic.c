@@ -76,7 +76,7 @@ static void junction_action(vc_t *v, vc_out_t *o, uint32_t now)
 	v->junction_cmd = v->nav_has ? v->nav_cmd : -1;
 	v->nav_has = false;
 	if (v->junction_cmd < 0 && !VC_JUNCTION_PAUSE_ALWAYS)
-		return;					/* no barcode waiting: just carry on */
+		return;
 	cmd(o, MOTION_CMD_STOP, 0, 0, 0);
 	enter(v, o, VC_BARCODE_ACTION, now);
 	v->sub = 0;					/* 0 = pausing */
@@ -101,7 +101,6 @@ void vc_step(vc_t *v, const vc_in_t *in, vc_out_t *o)
 	if (in->imu && in->imu->type == IMU_EVT_HUMP && in->imu->max_hump_mm > v->max_hump_mm)
 		v->max_hump_mm = in->imu->max_hump_mm;
 
-	/* ---- 1. things that take priority in any state ---- */
 	if (in->remote && in->remote->cmd == REMOTE_RESET) {
 		o->stop_clear_reset = true;			/* clear STOP first, then RESET (task does it in this order) */
 		cmd(o, MOTION_CMD_STOP, 0, 0, 0);
@@ -121,7 +120,6 @@ void vc_step(vc_t *v, const vc_in_t *in, vc_out_t *o)
 		}
 	}
 
-	/* ---- 2. per state ---- */
 	switch (v->state) {
 	case VC_INIT:
 		if (in->all_ready)
@@ -132,7 +130,7 @@ void vc_step(vc_t *v, const vc_in_t *in, vc_out_t *o)
 
 	case VC_IDLE:
 #if VC_BENCH_LINE_ONLY
-		if (v->bench_restart && now - v->t_state >= 300) {	/* after an automatic reset: drive on */
+		if (v->bench_restart && now - v->t_state >= 300) {
 			v->bench_restart = false;
 			go(v, o, VC_CRUISE_SPEED);
 			enter(v, o, VC_LINE_FOLLOW, now);
@@ -147,7 +145,7 @@ void vc_step(vc_t *v, const vc_in_t *in, vc_out_t *o)
 
 	case VC_LINE_FOLLOW:
 #if VC_BENCH_LINE_ONLY
-		if (in->obstacle_close) {			/* bench: the ONLY reason to stop is an obstacle */
+		if (in->obstacle_close) {
 			cmd(o, MOTION_CMD_STOP, 0, 0, 0);
 			o->scan_request = true;			/* sweep the servo and profile it while we wait */
 			v->sub = 0;
@@ -155,7 +153,7 @@ void vc_step(vc_t *v, const vc_in_t *in, vc_out_t *o)
 			break;
 		}
 #if VC_BENCH_BARCODES
-		if (in->nav && in->nav->cmd != NAV_STOP) {	/* remember the barcode until the next junction */
+		if (in->nav && in->nav->cmd != NAV_STOP) {
 			v->nav_has = true;
 			v->nav_cmd = in->nav->cmd;
 			v->t_nav = now;
@@ -165,9 +163,9 @@ void vc_step(vc_t *v, const vc_in_t *in, vc_out_t *o)
 		if (in->line && in->line->type == LINE_EVT_JUNCTION)
 			junction_action(v, o, now);
 #endif
-		break;						/* otherwise keep creeping along the line */
+		break;
 #endif
-		if (in->nav) {					/* a barcode was read: remember it until the next junction */
+		if (in->nav) {
 			if (in->nav->cmd == NAV_STOP) {
 				cmd(o, MOTION_CMD_STOP, 0, 0, 0);
 				enter(v, o, VC_COMPLETE, now);
@@ -178,7 +176,7 @@ void vc_step(vc_t *v, const vc_in_t *in, vc_out_t *o)
 			v->t_nav = now;
 		}
 		if (v->nav_has && VC_NAV_EXPIRE_MS > 0 && now - v->t_nav > VC_NAV_EXPIRE_MS)
-			v->nav_has = false;			/* no junction followed: forget it */
+			v->nav_has = false;
 
 		if (in->obstacle_close) {
 			cmd(o, MOTION_CMD_STOP, 0, 0, 0);
@@ -186,7 +184,7 @@ void vc_step(vc_t *v, const vc_in_t *in, vc_out_t *o)
 			v->sub = 0;
 			enter(v, o, VC_OBSTACLE_AVOID, now);
 		} else if (in->line && in->line->type == LINE_EVT_JUNCTION && (v->nav_has || VC_JUNCTION_PAUSE_ALWAYS)) {
-			junction_action(v, o, now);		/* stop, pause, then the barcode command */
+			junction_action(v, o, now);
 		} else if (in->line && in->line->type == LINE_EVT_LOST) {
 			go(v, o, VC_RECOVER_SPEED);
 			enter(v, o, VC_RECOVER, now);
@@ -202,7 +200,7 @@ void vc_step(vc_t *v, const vc_in_t *in, vc_out_t *o)
 				v->junction_cmd = in->nav->cmd;	/* the read finished as we reached the junction: use it */
 			if (now - v->t_sub < VC_JUNCTION_PAUSE_MS) break;
 			if (v->junction_cmd < 0 || v->junction_cmd == NAV_STRAIGHT) {
-				go(v, o, VC_CRUISE_SPEED);	/* straight on */
+				go(v, o, VC_CRUISE_SPEED);
 				enter(v, o, VC_LINE_FOLLOW, now);
 			} else {				/* drive to the junction centre first */
 				manoeuvre(v, o, MOTION_CMD_MOVE, 0, VC_JUNCTION_ADVANCE_MM);
@@ -221,7 +219,7 @@ void vc_step(vc_t *v, const vc_in_t *in, vc_out_t *o)
 				default:	manoeuvre(v, o, MOTION_CMD_UTURN, 0, 0); break;
 				}
 				v->settle = VC_SETTLE_TICKS;
-			} else {				/* turned: follow the line again */
+			} else {
 				go(v, o, VC_CRUISE_SPEED);
 				enter(v, o, VC_LINE_FOLLOW, now);
 			}
@@ -262,10 +260,10 @@ void vc_step(vc_t *v, const vc_in_t *in, vc_out_t *o)
 		if (v->sub == 0) {				/* WAIT FOR THE SCAN */
 			if (in->obst) {
 				v->ob = *in->obst;
-				if (!v->ob.found) {		/* false alarm */
+				if (!v->ob.found) {
 					go(v, o, VC_CRUISE_SPEED);
 					enter(v, o, VC_LINE_FOLLOW, now);
-				} else if (v->ob.side == 0) {	/* neither side wide enough */
+				} else if (v->ob.side == 0) {
 					enter_fault(v, o, FAULT_OBSTACLE, now);
 				} else {
 					v->sub = 1; v->step = 0;
@@ -313,7 +311,7 @@ void vc_step(vc_t *v, const vc_in_t *in, vc_out_t *o)
 			enter(v, o, VC_IDLE, now);
 		}
 #endif
-		break;						/* otherwise wait for a remote RESET */
+		break;
 	default:
 		break;
 	}

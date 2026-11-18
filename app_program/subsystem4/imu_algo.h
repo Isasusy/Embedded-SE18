@@ -12,7 +12,6 @@
 #include <stdbool.h>
 #include "imu_msgs.h"
 
-/* ============================== CALIBRATE state ============================== */
 typedef struct {
     uint32_t n;
     float    sum_a[3], sum_g[3], sumsq_g[3];
@@ -31,7 +30,6 @@ void             imu_cal_reset(imu_cal_t *c);
 void             imu_cal_add(imu_cal_t *c, float ax, float ay, float az, float gx, float gy, float gz);
 imu_cal_status_t imu_cal_finish(const imu_cal_t *c, imu_cal_result_t *res);
 
-/* ============================== runtime state ============================== */
 typedef enum {
     HUMP_NORMAL,
     HUMP_DETECTED,        /* climb started                    */

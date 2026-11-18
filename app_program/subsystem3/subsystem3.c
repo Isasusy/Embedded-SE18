@@ -6,8 +6,8 @@
 #include "subsystem3.h"
 #include "drv_line.h"
 
-EXPORT ID		flg_line;	/* IF-16 */
-EXPORT ID		mtx_line;	/* IF-11 */
+EXPORT ID		flg_line;
+EXPORT ID		mtx_line;
 EXPORT line_status_t	app_line;
 
 /* Owned by the Vehicle Controller (S5). Weak defaults (0) so S3 links and runs alone. */

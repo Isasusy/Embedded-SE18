@@ -58,7 +58,7 @@ static bool ping_hit(int ang, int *dist)
 void scan_task(INT stacd, void *exinf)
 {
 	const int lo = SCAN_WATCH_DEG - SCAN_WATCH_SWEEP_DEG, hi = SCAN_WATCH_DEG + SCAN_WATCH_SWEEP_DEG;
-	int ang = lo, dir = +1;			/* where the sweep is, and which way it is going */
+	int ang = lo, dir = +1;
 	bool tracking = false;			/* parked on an obstacle until it has gone */
 	int track_ang = 0, clear_pings = 0, no_echo = 0, last_d = 0;
 	unsigned n_ping = 0; (void)n_ping; (void)no_echo;
@@ -81,7 +81,6 @@ void scan_task(INT stacd, void *exinf)
 	}
 #endif
 
-	/* idle until the car is started (FLG_SCAN_RUN, set by vc_task) */
 	servo_off();
 	bool active = false;
 
@@ -97,7 +96,7 @@ void scan_task(INT stacd, void *exinf)
 				servo_set_deg(SCAN_WATCH_DEG);
 				tk_dly_tsk(300);
 				servo_off();
-				tk_clr_flg(flg_scan, ~(UINT)(FLG_SCAN_CLOSE | FLG_SCAN_REQUEST));	/* nothing stale on restart */
+				tk_clr_flg(flg_scan, ~(UINT)(FLG_SCAN_CLOSE | FLG_SCAN_REQUEST));
 #if S5_ULTRA_PRINT
 				S5_PRINTF("[S5] scan: idle (car stopped)\n");
 #endif
@@ -115,7 +114,7 @@ void scan_task(INT stacd, void *exinf)
 		}
 
 		if (tk_wai_flg(flg_scan, FLG_SCAN_REQUEST, TWF_ORW | TWF_BITCLR, &ptn, TMO_POL) == E_OK) {
-			do_sweep();			/* the VC stopped the car and wants the obstacle profiled */
+			do_sweep();
 			tk_clr_flg(flg_scan, ~(UINT)FLG_SCAN_CLOSE);
 			if (tracking)
 				servo_set_deg(track_ang);	/* go back to the obstacle and keep watching it */
@@ -123,7 +122,7 @@ void scan_task(INT stacd, void *exinf)
 			continue;
 		}
 
-		if (tracking) {				/* parked: ping the obstacle until it has gone */
+		if (tracking) {
 			int d;
 			if (ping_hit(track_ang, &d)) {
 				tk_set_flg(flg_scan, FLG_SCAN_CLOSE);
@@ -133,7 +132,7 @@ void scan_task(INT stacd, void *exinf)
 			}
 			last_d = d;
 			tk_dly_tsk(SCAN_PERIOD_MS);
-		} else {				/* sweep: move one step, settle, ping */
+		} else {
 			int d;
 			servo_set_deg(ang);
 			tk_dly_tsk(SCAN_WATCH_SETTLE_MS);

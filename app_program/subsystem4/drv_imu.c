@@ -9,7 +9,7 @@
 #include "drv_imu.h"
 #include "imu_config.h"
 #include "s4_port.h"
-#include "../../device/include/dev_i2c.h"	/* T_I2C_EXEC, TDN_I2C_EXEC, dev_init_i2c */
+#include "../../device/include/dev_i2c.h"
 
 /* MPU-6050 / 6500 registers */
 #define REG_SMPLRT_DIV		0x19
@@ -74,7 +74,7 @@ static void diagnose(void)
 	uint32_t t0 = S4_US32();
 	int found = 0;
 
-	if (done) return;			/* once per power-up is enough */
+	if (done) return;
 	done = true;
 	S4_PRINTF("[IMU] last error code = %d (E_IO -> device did not acknowledge; E_TMOUT -> bus stuck / no pull-ups)\n", s_last_er);
 	/* a probe that times out takes DEVCNF_I2C0_TMO (10 ms) or more: do not scan 112 addresses on a stuck bus */

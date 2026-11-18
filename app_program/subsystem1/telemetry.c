@@ -14,7 +14,6 @@ const char *tm_fault_name(int f)
 	return (unsigned)f < 10 ? n[f] : "UNKNOWN";
 }
 
-/* ---- tiny bounded writer ---- */
 typedef struct { char *p; int cap, len; } w_t;
 
 static void put_c(w_t *w, char c) { if (w->len + 1 < w->cap) w->p[w->len] = c; w->len++; }
@@ -26,7 +25,7 @@ static void put_u(w_t *w, uint32_t v)
 	while (n) put_c(w, t[--n]);
 }
 static void put_i(w_t *w, int32_t v) { if (v < 0) { put_c(w, '-'); put_u(w, (uint32_t)(-(int64_t)v)); } else put_u(w, (uint32_t)v); }
-static void put_tenths(w_t *w, float x)		/* 12.34 -> 12.3 */
+static void put_tenths(w_t *w, float x)
 {
 	int32_t t = (int32_t)(x * 10.0f + (x < 0 ? -0.5f : 0.5f));
 	if (t < 0) { put_c(w, '-'); t = -t; }
@@ -66,7 +65,7 @@ static int is_letter(char c) { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <
 static int has_word(const char *p, int len, const char *word)
 {
 	for (int i = 0; i < len; i++) {
-		if (i > 0 && is_letter(p[i - 1])) continue;	/* must not start in the middle of a word */
+		if (i > 0 && is_letter(p[i - 1])) continue;
 		int k = 0;
 		while (word[k] && i + k < len) {
 			char c = p[i + k];
@@ -74,7 +73,7 @@ static int has_word(const char *p, int len, const char *word)
 			if (c != word[k]) break;
 			k++;
 		}
-		if (!word[k] && !(i + k < len && is_letter(p[i + k]))) return 1;	/* ... nor end in one */
+		if (!word[k] && !(i + k < len && is_letter(p[i + k]))) return 1;
 	}
 	return 0;
 }
@@ -83,7 +82,7 @@ int tm_parse_cmd(const char *p, int len)
 {
 	if (!p || len <= 0 || len > 128) return -1;
 	int s = has_word(p, len, "start"), t = has_word(p, len, "stop"), r = has_word(p, len, "reset");
-	if (s + t + r != 1) return -1;			/* none, or ambiguous: ignore */
+	if (s + t + r != 1) return -1;
 	return s ? REMOTE_START : (t ? REMOTE_STOP : REMOTE_RESET);
 }
 

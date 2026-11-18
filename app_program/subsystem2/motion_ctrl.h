@@ -31,12 +31,12 @@ typedef struct {
 	mc_state_t	state, resume;
 	float		cruise_speed;
 	float		v_l, v_r;		/* filtered wheel speeds, mm/s */
-	float		i_l, i_r;		/* PI integrators              */
+	float		i_l, i_r;
 	float		dl_mm, dr_mm;		/* cumulative wheel distances  */
 	float		dist_mm, heading;
 	float		hold;			/* heading kept when no line   */
 	float		man_h0, man_angle;	/* TURN / U_TURN start heading and signed angle */
-	float		man_d0, man_dist, man_speed;	/* MOVE */
+	float		man_d0, man_dist, man_speed;
 	unsigned	man_cycles;
 	unsigned	stall_l, stall_r;
 	int		pwm_l, pwm_r;

@@ -24,9 +24,7 @@
 #include "imu_config.h"
 #include "s4_port.h"
 
-/* ------------------------------------------------------------------ helpers */
 
-/* fixed 10 ms cadence without drift: remember the absolute deadline, re-sync after an overrun */
 static uint32_t s_next_us;
 
 static void period_start(void)
@@ -38,7 +36,7 @@ static void period_wait(void)
 {
 	s_next_us += (uint32_t)IMU_PERIOD_MS * 1000u;
 	int32_t delta = (int32_t)(s_next_us - S4_US32());
-	if (delta <= 0) {			/* overran: do not try to catch up */
+	if (delta <= 0) {
 		s_next_us = S4_US32();
 		return;
 	}
@@ -51,7 +49,6 @@ static void alive(void)
 	tk_set_flg(flg_imu, FLG_IMU_ALIVE);
 }
 
-/* wait without ever letting the ALIVE flag go stale */
 static void delay_alive(uint32_t ms)
 {
 	for (uint32_t t = 0; t < ms; t += IMU_PERIOD_MS) {
@@ -60,8 +57,6 @@ static void delay_alive(uint32_t ms)
 	}
 }
 
-/* Never block. If the buffer is full, drop non-critical events; for IMPACT / SENSOR_FAULT make
-   room by discarding the oldest queued event so the Vehicle Controller always sees them. */
 static void print_evt(const imu_evt_t *e)
 {
 	char b0[16], b1[16];
@@ -83,7 +78,6 @@ static void print_evt(const imu_evt_t *e)
 	}
 }
 
-/* Until the Vehicle Controller creates mbf_imu_evt (IF-06), events are printed instead. */
 static void publish_evt(const imu_evt_t *e)
 {
 #if S4_DEBUG_PRINT
@@ -128,7 +122,6 @@ static void map_axes(const imu_raw_t *r, float a[3], float g[3])
 	g[2] = IMU_MAP_Z(r->gx_dps, r->gy_dps, r->gz_dps);
 }
 
-/* ------------------------------------------------------------------ CALIBRATE */
 static bool calibrate(imu_cal_result_t *res)
 {
 	for (int attempt = 1; attempt <= IMU_CAL_MAX_TRIES; attempt++) {
@@ -176,7 +169,6 @@ static bool calibrate(imu_cal_result_t *res)
 	return false;
 }
 
-/* ------------------------------------------------------------------ 10 ms loop */
 /* returns only on repeated I2C failure */
 static void run_loop(imu_algo_t *algo, const imu_cal_result_t *cal, IMU_DEBUG *dbg)
 {
@@ -194,9 +186,9 @@ static void run_loop(imu_algo_t *algo, const imu_cal_result_t *cal, IMU_DEBUG *d
 	for (;;) {
 		period_wait();
 		const uint32_t t0 = S4_US32();
-		alive();							/* alive, every cycle */
+		alive();
 
-		if (!first) {							/* A6: log jitter */
+		if (!first) {
 			int32_t j = (int32_t)(t0 - t_prev_wake_us) - (int32_t)(IMU_PERIOD_MS * 1000);
 			if (j < 0) j = -j;
 			if ((uint32_t)j > dbg->jitter_us_max) dbg->jitter_us_max = (uint32_t)j;
@@ -204,22 +196,19 @@ static void run_loop(imu_algo_t *algo, const imu_cal_result_t *cal, IMU_DEBUG *d
 		first = false;
 		t_prev_wake_us = t0;
 
-		/* ---- read the sensor ---- */
 		imu_raw_t raw;
 		if (!imu_hw_read(&raw)) {
 			dbg->read_fails++;
-			if (++fails >= IMU_MAX_READ_FAILS) return;		/* -> SENSOR_FAULT */
+			if (++fails >= IMU_MAX_READ_FAILS) return;
 			continue;
 		}
 		fails = 0;
 
-		/* ---- mission reset requested by the Vehicle Controller? (FR9) ---- */
 		UINT ptn;
 		if (tk_wai_flg(flg_imu, FLG_IMU_RESET, TWF_ORW | TWF_BITCLR, &ptn, TMO_POL) == E_OK) {
 			imu_algo_reset_mission(algo);
 		}
 
-		/* ---- Motion Control's status (IF-08): poll the mutex, reuse the last copy if busy ---- */
 		if (mtx_motion > 0) {
 			if (tk_loc_mtx(mtx_motion, TMO_POL) == E_OK) {
 				last_motion = app_motion;
@@ -234,7 +223,6 @@ static void run_loop(imu_algo_t *algo, const imu_cal_result_t *cal, IMU_DEBUG *d
 			last_motion.distance_mm += S4_FAKE_SPEED_MM_S * 0.010f;
 		}
 
-		/* ---- build algorithm input ---- */
 		imu_algo_in_t in;
 		float a[3], g[3];
 		map_axes(&raw, a, g);
@@ -243,7 +231,7 @@ static void run_loop(imu_algo_t *algo, const imu_cal_result_t *cal, IMU_DEBUG *d
 		in.gy_dps = g[1] - cal->gyro_bias_dps[1];
 		in.gz_dps = g[2] - cal->gyro_bias_dps[2];
 
-		float dt = (float)(t0 - t_prev_step_us) * 1e-6f;		/* measured, clamped */
+		float dt = (float)(t0 - t_prev_step_us) * 1e-6f;
 		if (dt < 0.005f) dt = 0.005f;
 		if (dt > 0.020f) dt = 0.020f;
 		t_prev_step_us = t0;
@@ -255,17 +243,15 @@ static void run_loop(imu_algo_t *algo, const imu_cal_result_t *cal, IMU_DEBUG *d
 		in.dist_valid  = true;
 		in.distance_mm = last_motion.distance_mm;
 
-		/* ---- the statechart ---- */
 		imu_algo_out_t out;
 		imu_algo_step(algo, &in, &out);
 		for (uint8_t i = 0; i < out.n; i++) publish_evt(&out.evt[i]);
 
-		/* ---- bookkeeping ---- */
 		dbg->samples++;
 		const uint32_t exec = S4_US32() - t0;
 		if (exec > dbg->exec_us_max) dbg->exec_us_max = exec;
 
-		if (++dbg_div >= 5) {						/* snapshot at 20 Hz */
+		if (++dbg_div >= 5) {
 			dbg_div = 0;
 			dbg->cls           = algo->cls;
 			dbg->hump_state    = (int)algo->hump_state;
@@ -276,7 +262,7 @@ static void run_loop(imu_algo_t *algo, const imu_cal_result_t *cal, IMU_DEBUG *d
 			dbg->max_hump_mm   = algo->max_hump_mm;
 			s4_imu_debug = *dbg;
 #if S4_DEBUG_PRINT
-			if ((++print_div % 5) == 0) {				/* status line, 4 Hz */
+			if ((++print_div % 5) == 0) {
 				char p0[16], p1[16], p2[16], p3[16], p4[16];
 				S4_PRINTF("pitch %s  yaw %s dps  |a| %s g  %s  hump:%s  h=%s mm  MAX=%s mm"
 					  "  | exec<=%u us jitter<=%u us fails=%u\n",
@@ -292,7 +278,6 @@ static void run_loop(imu_algo_t *algo, const imu_cal_result_t *cal, IMU_DEBUG *d
 	}
 }
 
-/* ------------------------------------------------------------------ the task */
 EXPORT void imu_task(INT stacd, void *exinf)
 {
 	(void)stacd;
@@ -335,7 +320,7 @@ EXPORT void imu_task(INT stacd, void *exinf)
 		tk_set_flg(flg_imu, FLG_IMU_READY);
 		S4_PRINTF("[IMU] running at %d Hz\n", 1000 / IMU_PERIOD_MS);
 
-		run_loop(&algo, &cal, &dbg);		/* only returns on repeated I2C failure */
+		run_loop(&algo, &cal, &dbg);
 
 		tk_clr_flg(flg_imu, ~(UINT)FLG_IMU_READY);
 		dbg.fault = true;

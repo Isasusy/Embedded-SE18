@@ -25,7 +25,7 @@ void scan_analyze(const int *ang, const int *dist, int n, obstacle_t *o)
 		if (abs(ang[i]) < abs(ang[c])) c = i;
 	if (!is_near(dist[c])) return;
 
-	int lft = c, rgt = c;				/* grow while rays stay near */
+	int lft = c, rgt = c;
 	while (lft + 1 < n && is_near(dist[lft + 1])) lft++;
 	while (rgt - 1 >= 0 && is_near(dist[rgt - 1])) rgt--;
 

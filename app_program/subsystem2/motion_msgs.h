@@ -12,7 +12,6 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-/* ---------------- Vehicle Controller -> Motion Control : motion_cmd_t (IF-09, message buffer) ---- */
 typedef enum {
 	MOTION_CMD_GO,		/* drive straight at speed_mm_s (0 = default speed); line steering applies */
 	MOTION_CMD_STOP,	/* PWM = 0, state STOPPED                                                  */

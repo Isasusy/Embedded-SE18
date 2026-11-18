@@ -78,7 +78,7 @@ static void sort_u32(uint32_t *v, int n)
 static bool classify_bars(int method, const uint32_t *w, const int16_t *pk, int n, bool *thick)
 {
 	if (n < 5) return false;
-	for (int i = 0; i < n; i += 2) thick[i] = false;	/* first and last bar stay thin */
+	for (int i = 0; i < n; i += 2) thick[i] = false;
 
 	if (method == BAR_BY_DARKNESS) {
 		if (!pk) return false;
@@ -99,7 +99,7 @@ static bool classify_bars(int method, const uint32_t *w, const int16_t *pk, int 
 	for (int i = 2; i < n - 1; i += 2) s[nb++] = w[i];
 	if (nb < 2) return false;
 	sort_u32(s, nb);
-	int j1 = -1, j2 = -1;				/* where the biggest and second biggest jumps are */
+	int j1 = -1, j2 = -1;
 	float r1 = 0.0f, r2 = 0.0f;
 	for (int j = 0; j + 1 < nb; j++) {
 		float r = s[j] ? (float)s[j + 1] / (float)s[j] : 0.0f;
@@ -108,7 +108,7 @@ static bool classify_bars(int method, const uint32_t *w, const int16_t *pk, int 
 	}
 	int j = (method == BAR_BY_LENGTH) ? j1 : j2;
 	float r = (method == BAR_BY_LENGTH) ? r1 : r2;
-	if (j < 0 || r < BAR_LEN_SPLIT_RATIO) return false;	/* no clear jump: bars all look alike */
+	if (j < 0 || r < BAR_LEN_SPLIT_RATIO) return false;
 	uint32_t thr = s[j] + (s[j + 1] - s[j]) / 2;
 	for (int i = 2; i < n - 1; i += 2) thick[i] = w[i] > thr;
 	return true;
@@ -147,7 +147,7 @@ static bool try_decode_bars(const uint32_t *w, const bool *thickbar, int n, char
 	int k = (n + 1) / 10, t = 0, bad = 0;
 	for (int c = 0; c < k; c++) {
 		int b0 = c * 10, wu[5], nwb = 0;
-		char ch = 0;					/* stays 0 if this character cannot be read */
+		char ch = 0;
 		for (int j = 0; j < 5; j++) { wu[j] = thickbar[b0 + 2 * j] ? 3 : 1; if (wu[j] == 3) nwb++; }
 		int nws = 3 - nwb;
 		if (nws == 1 || nws == 3) {
@@ -159,7 +159,7 @@ static bool try_decode_bars(const uint32_t *w, const bool *thickbar, int n, char
 			}
 			float unit = sd / (sh + (float)(3 * nws + (4 - nws)));
 			if (unit > 0.0f) {
-				for (int j = 0; j < 4; j++) r[j] = d[j] / unit - half[j];	/* ~1 narrow space, ~3 wide */
+				for (int j = 0; j < 4; j++) r[j] = d[j] / unit - half[j];
 				bool ws[4] = { false, false, false, false };
 				for (int m = 0; m < nws; m++) {
 					int best = -1;
@@ -175,11 +175,11 @@ static bool try_decode_bars(const uint32_t *w, const bool *thickbar, int n, char
 				ch = lookup(bits);
 			}
 		}
-		if (wide_out && c < k - 1) wide_out[b0 + 9] = false;	/* the gap between characters */
+		if (wide_out && c < k - 1) wide_out[b0 + 9] = false;
 		bool guard = (c == 0 || c == k - 1);
 		if (guard ? ch != '*' : (!ch || ch == '*')) {
 			if (!guard || !tolerant || ++bad > 1) return false;
-			continue;				/* one damaged '*': the letters between still count */
+			continue;
 		}
 		if (!guard && t < 7) text[t++] = ch;
 	}
@@ -188,7 +188,6 @@ static bool try_decode_bars(const uint32_t *w, const bool *thickbar, int n, char
 	return t > 0;
 }
 
-/* try one orientation; true when it is "*...*" and every character is valid (`tolerant`: see try_decode_bars) */
 static bool try_decode(const uint32_t *w, int n, char *text, bool tolerant, bool *damaged)
 {
 	*damaged = false;
@@ -218,7 +217,7 @@ static void merge_dark_dips(uint32_t *w, int16_t *pk, int *pn)
 	int n = *pn, nb = 0, white = 32767;
 
 	for (int i = 0; i < n; i++) {
-		if (pk[i] < 0) return;			/* peaks unknown: nothing to go on */
+		if (pk[i] < 0) return;
 		if (i % 2 == 0) s[nb++] = pk[i];
 		else if (pk[i] < white) white = pk[i];
 	}
@@ -226,12 +225,12 @@ static void merge_dark_dips(uint32_t *w, int16_t *pk, int *pn)
 	for (int i = 1; i < nb; i++)
 		for (int j = i; j > 0 && s[j] < s[j - 1]; j--) { int16_t x = s[j]; s[j] = s[j - 1]; s[j - 1] = x; }
 	int dark = s[(3 * nb) / 4];
-	if (dark - white < BAR_PEAK_SPLIT) return;	/* bars hardly darker than the spaces: leave it alone */
+	if (dark - white < BAR_PEAK_SPLIT) return;
 	int lim = white + (BAR_DIP_LEVEL_PCT * (dark - white)) / 100;
 
-	int o = 0;					/* write position (never ahead of i) */
+	int o = 0;
 	for (int i = 0; i < n; i++) {
-		if (i % 2 == 1 && i + 1 < n && pk[i] >= lim) {	/* a dip: it and the bar after it join the bar before */
+		if (i % 2 == 1 && i + 1 < n && pk[i] >= lim) {
 			w[o - 1] += w[i] + w[i + 1];
 			if (pk[i + 1] > pk[o - 1]) pk[o - 1] = pk[i + 1];
 			i++;
@@ -256,7 +255,7 @@ static bd_result_t decode(const uint32_t *w_in, const int16_t *pk_in, int n, bd_
 	static int16_t pkm[BAR_MAX_ELEMENTS];
 	const int16_t *pk = pk_in ? pkm : NULL;
 	for (int i = 0; i < n; i++) { w[i] = w_in[i]; pkm[i] = pk_in ? pk_in[i] : -1; }
-	if (pk) merge_dark_dips(w, pkm, &n);		/* spaces that never got light: always part of a bar */
+	if (pk) merge_dark_dips(w, pkm, &n);
 	/* then, if the count still does not fit, the darkest of the remaining dips, one at a time;
 	   only for an ODD count (a code starts and ends with a bar): merging removes 2 stripes, so an even count can never
 	   reach 10k - 1 and would only lose information */
@@ -271,8 +270,6 @@ static bd_result_t decode(const uint32_t *w_in, const int16_t *pk_in, int n, bd_
 		n -= 2;
 	}
 
-	/* the log pattern: bars by the first method that can classify them, spaces (and bars if none can) by the
-	   midpoint of all the widths */
 	static bool thick[BAR_MAX_ELEMENTS], rthick[BAR_MAX_ELEMENTS], wide[BAR_MAX_ELEMENTS];
 	uint32_t lo = 0xFFFFFFFFu, hi = 0;
 	for (int i = 0; i < n; i++) { if (w[i] < lo) lo = w[i]; if (w[i] > hi) hi = w[i]; }
@@ -281,7 +278,7 @@ static bd_result_t decode(const uint32_t *w_in, const int16_t *pk_in, int n, bd_
 	out->narrow_us = n ? lo : 0;
 	int p = 0;
 	for (int i = 0; i < n && p < (int)sizeof out->pattern - 2; i++) {
-		if (i > 0 && (i % 10 == 9 || i % 10 == 0) && (n + 1) % 10 == 0) out->pattern[p++] = ' ';	/* gap between characters */
+		if (i > 0 && (i % 10 == 9 || i % 10 == 0) && (n + 1) % 10 == 0) out->pattern[p++] = ' ';
 		bool wd = (have_bars && i % 2 == 0) ? thick[i] : w[i] > (lo + hi) / 2;
 		out->pattern[p++] = wd ? 'W' : 'n';
 	}
@@ -290,8 +287,6 @@ static bd_result_t decode(const uint32_t *w_in, const int16_t *pk_in, int n, bd_
 	static uint32_t r[BAR_MAX_ELEMENTS];
 	for (int i = 0; i < n; i++) r[i] = w[n - 1 - i];
 
-	/* pass 0: every character must be valid. pass 1 (if allowed): one '*' may be damaged. A fully valid read by any
-	   method always wins over a damaged one. */
 	for (int pass = 0; pass < (allow_damaged ? 2 : 1); pass++) {
 		bool tol = (pass == 1), dmg = false;
 		for (int m = 0; m < BAR_N_METHODS; m++) {
@@ -307,7 +302,6 @@ static bd_result_t decode(const uint32_t *w_in, const int16_t *pk_in, int n, bd_
 				}
 			}
 		}
-		/* last resort, no blur handling: in each character the 3 longest elements are the wide ones */
 		for (int dir = 0; dir < 2; dir++) {
 			if (try_decode(dir ? r : w, n, out->text, tol, &dmg)) {
 				out->method = method_name[BAR_N_METHODS];
@@ -333,9 +327,9 @@ void bd_edge_p(bd_t *b, uint32_t t, bool black, int peak)
 {
 	if (!b->active) {
 		if (black) { b->active = true; b->black = true; b->t_start = t; b->n = 0; b->widest = 0; b->tried_n = 0; b->narrowest = 0; b->widest_space = 0; }
-		return;					/* waiting for the first bar */
+		return;
 	}
-	if (black == b->black) return;			/* not a change */
+	if (black == b->black) return;
 	uint32_t d = t - b->t_start;
 	if (d < BAR_MIN_US && b->n > 0) {		/* glitch: re-open the previous element and carry on with it */
 		b->n--;
@@ -379,13 +373,13 @@ bd_result_t bd_poll(bd_t *b, uint32_t now, bd_read_t *out)
 		if (d > BAR_MAX_WEAK_US) b->active = false;	/* sitting on black: not a barcode */
 		return BD_NONE;
 	}
-	uint32_t widest = b->widest ? b->widest : (b->n ? b->w[0] : 0);	/* only one bar so far: use it */
+	uint32_t widest = b->widest ? b->widest : (b->n ? b->w[0] : 0);
 
 	/* Early finish: whole characters are in (29, 39 ... stripes) and the white after them is already longer than
 	   any wide element: if they decode, report now, so the command is known well before the junction. */
 	if (b->n >= 29 && (b->n + 1) % 10 == 0 && b->tried_n != b->n && d > widest + widest / 2) {
 		b->tried_n = b->n;
-		if (decode(b->w, b->pk, b->n, out, false) == BD_VALID) {	/* strict: the code may still go on */
+		if (decode(b->w, b->pk, b->n, out, false) == BD_VALID) {
 			b->active = false;
 			return BD_VALID;
 		}
@@ -400,8 +394,8 @@ bd_result_t bd_poll(bd_t *b, uint32_t now, bd_read_t *out)
 	if (b->widest_space + b->widest_space / 2 > quiet) quiet = b->widest_space + b->widest_space / 2;
 	if (quiet < BAR_END_MIN_US) quiet = BAR_END_MIN_US;
 	if (d < quiet) return BD_NONE;
-	b->active = false;				/* the quiet zone after the code: decode what we have */
-	if (b->n < 3) return BD_NONE;			/* a single stripe or a speck: not worth a log line */
+	b->active = false;
+	if (b->n < 3) return BD_NONE;
 	return bd_decode(b->w, b->pk, b->n, out);
 }
 

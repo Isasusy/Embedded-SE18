@@ -7,7 +7,7 @@
 
 #include "subsystem4.h"
 
-EXPORT ID	flg_imu;		/* IF-07 */
+EXPORT ID	flg_imu;
 EXPORT IMU_DEBUG s4_imu_debug;
 
 /* Objects other subsystems will own (IF-06, IF-08). Weak defaults let subsystem 4 build, link and run

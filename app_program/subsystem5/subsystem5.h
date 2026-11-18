@@ -8,7 +8,7 @@
 
 #include "../app.h"
 #include "vc_msgs.h"
-#include "../subsystem4/imu_msgs.h"		/* imu_evt_t */
+#include "../subsystem4/imu_msgs.h"
 
 #define S5_PRI_VC		20		/* priority band 20-21 (TEAM.md) */
 #define S5_PRI_SCAN		21

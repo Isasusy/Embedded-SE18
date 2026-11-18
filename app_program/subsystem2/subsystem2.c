@@ -7,9 +7,9 @@
 
 #include "subsystem2.h"
 
-EXPORT ID		mbf_motion_cmd;		/* IF-09 */
-EXPORT ID		flg_motion;		/* IF-10 */
-EXPORT ID		mtx_motion;		/* IF-08 */
+EXPORT ID		mbf_motion_cmd;
+EXPORT ID		flg_motion;
+EXPORT ID		mtx_motion;
 EXPORT motion_status_t	app_motion;
 EXPORT MOTION_DEBUG	s2_motion_debug;
 
@@ -24,7 +24,6 @@ EXPORT ER subsystem2_init(void)
 	T_CFLG	cflg = {0};
 	T_CMTX	cmtx = {0};
 
-	/* Message buffer: commands from the Vehicle Controller, FIFO, depth 4. */
 	cmbf.mbfatr = TA_TFIFO;
 	cmbf.bufsz  = S2_CMD_BUFSZ;
 	cmbf.maxmsz = S2_CMD_MAXMSZ;

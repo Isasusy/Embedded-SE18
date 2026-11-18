@@ -137,7 +137,6 @@ int ultra_autodetect(void)
 {
 	int n = (int)(sizeof cand / sizeof cand[0]);
 
-	/* the configured pair first, then its swap, then everything else */
 	if (echo_rises(PIN_US_TRIG, PIN_US_ECHO)) { us_trig = PIN_US_TRIG; us_echo = PIN_US_ECHO; return 1; }
 	if (echo_rises(PIN_US_ECHO, PIN_US_TRIG)) { us_trig = PIN_US_ECHO; us_echo = PIN_US_TRIG; return 1; }
 	for (int i = 0; i < n; i++)
@@ -145,7 +144,7 @@ int ultra_autodetect(void)
 			if (i == j) continue;
 			if (echo_rises(cand[i], cand[j])) { us_trig = cand[i]; us_echo = cand[j]; return 1; }
 		}
-	pin_out(us_trig);					/* leave the defaults configured */
+	pin_out(us_trig);
 	pin_in(us_echo);
 	return 0;
 }
@@ -158,7 +157,7 @@ void ultra_init(void)
 	pin_out(us_trig);
 	pin_in(us_echo);
 	int ok = 0;
-	for (int k = 0; k < 3; k++) {				/* a quick check on the configured pins */
+	for (int k = 0; k < 3; k++) {
 		if (ultra_ping_mm() > 0) ok++;
 		wait_us(30000);
 	}
@@ -173,7 +172,6 @@ void ultra_init(void)
 	}
 }
 
-/* ---- start / stop button ---- */
 void button_init(void)
 {
 	const int pins[2] = { PIN_BTN_A, PIN_BTN_B };

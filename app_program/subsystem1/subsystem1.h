@@ -16,7 +16,7 @@
 
 /* IF-14  Vehicle Controller -> S1 : robot_status_t, message buffer owned by S1. The VC sends with TMO_POL. */
 #define S1_STATUS_MAXMSZ	((INT)sizeof(robot_status_t))
-#define S1_STATUS_BUFSZ		(8 * (sizeof(robot_status_t) + 4))	/* depth 8 (Section 6.6) */
+#define S1_STATUS_BUFSZ		(8 * (sizeof(robot_status_t) + 4))
 IMPORT ID	mbf_status;
 
 /* IF-15  S1 -> Vehicle Controller : remote_cmd_t, message buffer owned by S5 (see ../subsystem5/subsystem5.h). */
