@@ -59,9 +59,6 @@ void servo_off(void)
 
 static int us_trig = PIN_US_TRIG, us_echo = PIN_US_ECHO;
 
-/* pins the search may use: free on this robot (not IMU 0/1, encoders 2-5, motors 8-11, servo 15, IR 26-28) */
-static const unsigned char cand[] = { 16, 17, 19, 12, 13, 14, 6, 7 };
-
 static void pin_out(int p)
 {
 	PAD(p) = (1u << 6) | (1u << 1) | (1u << 4);		/* input enable, schmitt, 4 mA drive */
@@ -135,15 +132,8 @@ static int echo_rises(int t, int e)
 
 int ultra_autodetect(void)
 {
-	int n = (int)(sizeof cand / sizeof cand[0]);
-
 	if (echo_rises(PIN_US_TRIG, PIN_US_ECHO)) { us_trig = PIN_US_TRIG; us_echo = PIN_US_ECHO; return 1; }
 	if (echo_rises(PIN_US_ECHO, PIN_US_TRIG)) { us_trig = PIN_US_ECHO; us_echo = PIN_US_TRIG; return 1; }
-	for (int i = 0; i < n; i++)
-		for (int j = 0; j < n; j++) {
-			if (i == j) continue;
-			if (echo_rises(cand[i], cand[j])) { us_trig = cand[i]; us_echo = cand[j]; return 1; }
-		}
 	pin_out(us_trig);
 	pin_in(us_echo);
 	return 0;
@@ -162,11 +152,11 @@ void ultra_init(void)
 		wait_us(30000);
 	}
 	if (!ok) {
-		S5_PRINTF("[S5] ultrasonic: no echo on TRIG GP%d / ECHO GP%d, searching the other pins ...\n", us_trig, us_echo);
+		S5_PRINTF("[S5] ultrasonic: no echo on TRIG GP%d / ECHO GP%d, trying the swapped pair ...\n", us_trig, us_echo);
 		if (ultra_autodetect())
 			S5_PRINTF("[S5] ultrasonic FOUND: TRIG=GP%d ECHO=GP%d (set PIN_US_TRIG / PIN_US_ECHO in drv_scan.h to these)\n", us_trig, us_echo);
 		else
-			S5_PRINTF("[S5] ultrasonic: nothing answered on any free pin. Check the sensor's 5V and GND and that it is plugged in.\n");
+			S5_PRINTF("[S5] ultrasonic: no echo on GP%d/GP%d either way round. Check the sensor's 5V and GND and its wiring, then set PIN_US_TRIG / PIN_US_ECHO in drv_scan.h.\n", PIN_US_TRIG, PIN_US_ECHO);
 	} else {
 		S5_PRINTF("[S5] ultrasonic ok on TRIG GP%d / ECHO GP%d\n", us_trig, us_echo);
 	}
