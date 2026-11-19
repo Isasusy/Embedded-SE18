@@ -91,4 +91,7 @@
 
 #define LWIP_DEBUG                  0
 
+/* SE18: the obstacle profile JSON (25 rays) is up to ~330 bytes; lwIP's default 256-byte MQTT output ring cannot hold it. */
+#define MQTT_OUTPUT_RINGBUF_SIZE    512
+
 #endif /* LWIP_LWIPOPTS_H */

@@ -1,0 +1,392 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SE18 Robot Dashboard</title>
+<!--
+  Live MQTT dashboard for the SE18 robot car (subsystem 1 telemetry).
+  Browsers cannot open raw MQTT/TCP (port 1883), so this page talks to the same Mosquitto broker over WebSockets
+  (port 9001). Add to mosquitto.conf, then restart the service:
+      listener 9001
+      protocol websockets
+  Open this file in a browser: it connects on its own to the broker URL used last time (default ws://localhost:9001).
+  To use another broker, Disconnect, edit the URL, press Connect. "Demo" (or ?demo in the URL) plays fake data.
+  Topics and JSON formats: app_program/subsystem1/telemetry.c
+-->
+<script src="https://unpkg.com/mqtt@5.10.1/dist/mqtt.min.js"></script>
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
+  --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11,11,11,0.10);
+  --series-1: #2a78d6; --series-1-wash: rgba(42,120,214,0.12); --series-2: #eb6834;
+  --good: #0ca30c; --warning: #fab219; --serious: #ec835a; --critical: #d03b3b;
+  --btn: #0b0b0b; --btn-ink: #ffffff;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
+    --series-1: #3987e5; --series-1-wash: rgba(57,135,229,0.16); --series-2: #d95926;
+    --btn: #f0efec; --btn-ink: #0b0b0b;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
+  --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
+  --series-1: #3987e5; --series-1-wash: rgba(57,135,229,0.16); --series-2: #d95926;
+  --btn: #f0efec; --btn-ink: #0b0b0b;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+.wrap { max-width: 1200px; margin: 0 auto; padding: 16px; }
+header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+h1 { font-size: 18px; margin: 0; font-weight: 600; }
+h2 { font-size: 13px; margin: 0 0 12px; font-weight: 600; color: var(--ink-2); text-transform: uppercase; letter-spacing: .04em; }
+.conn { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+input[type=text] { font: inherit; padding: 6px 10px; border: 1px solid var(--axis); border-radius: 6px; background: var(--surface); color: var(--ink); width: 230px; max-width: 100%; }
+button { font: inherit; font-weight: 600; padding: 6px 14px; border-radius: 6px; border: 1px solid var(--axis); background: var(--surface); color: var(--ink); cursor: pointer; }
+button.primary { background: var(--btn); color: var(--btn-ink); border-color: var(--btn); }
+button:disabled { opacity: .45; cursor: not-allowed; }
+.pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); font-size: 13px; color: var(--ink-2); white-space: nowrap; }
+.dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex: none; }
+.grid { display: grid; gap: 16px; grid-template-columns: repeat(12, 1fr); }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; min-width: 0; }
+.span-12 { grid-column: span 12; } .span-8 { grid-column: span 8; } .span-6 { grid-column: span 6; } .span-4 { grid-column: span 4; } .span-3 { grid-column: span 3; }
+@media (max-width: 900px) { .span-8, .span-6, .span-4 { grid-column: span 12; } .span-3 { grid-column: span 6; } }
+@media (max-width: 480px) { .span-3 { grid-column: span 12; } }
+.tile-label { font-size: 12px; color: var(--ink-2); margin-bottom: 4px; }
+.tile-value { font-size: 28px; font-weight: 600; line-height: 1.15; overflow-wrap: anywhere; }
+.tile-sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
+.status { display: inline-flex; align-items: center; gap: 6px; }
+.status .ico { font-size: 16px; }
+.cmds { display: flex; gap: 8px; flex-wrap: wrap; }
+.cmds button { flex: 1; min-width: 80px; padding: 10px; }
+.chart-box { position: relative; }
+canvas { display: block; width: 100%; }
+.tip { position: absolute; pointer-events: none; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; font-size: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.12); display: none; white-space: nowrap; }
+.tip b { font-size: 14px; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--grid); }
+th { color: var(--ink-2); font-weight: 600; }
+td.num { font-variant-numeric: tabular-nums; }
+.table-scroll { max-height: 260px; overflow: auto; }
+.mono { font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+.log { max-height: 220px; overflow: auto; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--ink-2); }
+.empty { color: var(--muted); font-size: 13px; padding: 8px 0; }
+.sweep-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; margin-top: 8px; }
+.sweep-facts div { font-size: 12px; color: var(--ink-2); } .sweep-facts b { display: block; font-size: 16px; color: var(--ink); }
+.legend { display: flex; gap: 14px; font-size: 12px; color: var(--ink-2); margin-top: 6px; flex-wrap: wrap; }
+.sw { display: inline-block; width: 12px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 5px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>SE18 Robot Dashboard</h1>
+    <div class="conn">
+      <input id="url" type="text" value="ws://localhost:1883" aria-label="Broker WebSocket URL">
+      <button id="connectBtn" class="primary">Connect</button>
+      <button id="demoBtn">Demo</button>
+      <span class="pill"><span class="dot" id="connDot"></span><span id="connText">Disconnected</span></span>
+      <span class="pill"><span class="dot" id="hbDot"></span><span id="hbText">No heartbeat</span></span>
+    </div>
+  </header>
+
+  <div class="grid">
+    <div class="card span-3"><div class="tile-label">State</div><div class="tile-value" id="vState">–</div><div class="tile-sub" id="vStateSince">&nbsp;</div></div>
+    <div class="card span-3"><div class="tile-label">Fault</div><div class="tile-value status" id="vFault">–</div><div class="tile-sub" id="vFaultSub">&nbsp;</div></div>
+    <div class="card span-3"><div class="tile-label">Speed</div><div class="tile-value" id="vSpeed">–</div><div class="tile-sub">mm/s</div></div>
+    <div class="card span-3"><div class="tile-label">Max hump height</div><div class="tile-value" id="vHump">–</div><div class="tile-sub">mm</div></div>
+
+    <div class="card span-8">
+      <h2>Speed (mm/s), last 60 s</h2>
+      <div class="chart-box" id="speedBox">
+        <canvas id="speedCanvas" height="240" aria-label="Speed over the last 60 seconds"></canvas>
+        <div class="tip" id="speedTip"></div>
+      </div>
+    </div>
+    <div class="card span-4">
+      <h2>Remote command</h2>
+      <div class="cmds">
+        <button id="btnStart" disabled>START</button>
+        <button id="btnStop" disabled>STOP</button>
+        <button id="btnReset" disabled>RESET</button>
+      </div>
+      <div class="tile-sub" style="margin-top:8px">Publishes to <span class="mono">robot/se18/cmd</span></div>
+      <h2 style="margin-top:20px">State history</h2>
+      <div class="table-scroll" style="max-height:150px">
+        <table><thead><tr><th>Time</th><th>State</th></tr></thead><tbody id="stateRows"></tbody></table>
+        <div class="empty" id="stateEmpty">No state changes yet</div>
+      </div>
+    </div>
+
+    <div class="card span-6">
+      <h2>Obstacle sweep <span id="sweepN" style="text-transform:none;font-weight:400"></span></h2>
+      <div class="chart-box" id="sweepBox">
+        <svg id="sweepSvg" viewBox="0 0 400 230" width="100%" role="img" aria-label="Ultrasonic sweep, robot at bottom centre, left is left"></svg>
+        <div class="tip" id="sweepTip"></div>
+      </div>
+      <div class="legend"><span><span class="sw" style="background:var(--series-1)"></span>echo distance</span><span><span class="sw" style="background:var(--muted)"></span>no echo</span></div>
+      <div class="sweep-facts">
+        <div>Found<b id="oFound">–</b></div>
+        <div>Distance<b id="oDist">–</b></div>
+        <div>Width<b id="oWidth">–</b></div>
+        <div>Left clear<b id="oLeft">–</b></div>
+        <div>Right clear<b id="oRight">–</b></div>
+        <div>Go around<b id="oSide">–</b></div>
+      </div>
+    </div>
+
+    <div class="card span-6">
+      <h2>Barcodes</h2>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>#</th><th>Time</th><th>Code</th><th>Command</th><th>Pattern</th></tr></thead>
+          <tbody id="bcRows"></tbody>
+        </table>
+        <div class="empty" id="bcEmpty">No barcodes read yet</div>
+      </div>
+    </div>
+
+    <div class="card span-12">
+      <h2>Raw messages</h2>
+      <pre class="log mono" id="log"></pre>
+    </div>
+  </div>
+</div>
+
+<script>
+const TOPIC = { status: 'robot/se18/status', hb: 'robot/se18/heartbeat', cmd: 'robot/se18/cmd',
+                barcode: 'robot/se18/barcode', obstacle: 'robot/se18/obstacle' };
+const WINDOW_MS = 60000, HB_STALE_MS = 3000;
+const $ = id => document.getElementById(id);
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const clock = d => d.toLocaleTimeString([], { hour12: false });
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+let client = null, demoTimer = null;
+let speed = [];                 // {t, v}
+let lastHb = 0, lastState = null, stateSince = 0;
+
+/* ---------- connection ---------- */
+function setConn(text, color) { $('connText').textContent = text; $('connDot').style.background = color; }
+function setCmdEnabled(on) { ['btnStart', 'btnStop', 'btnReset'].forEach(id => $(id).disabled = !on); }
+
+function connect() {
+  if (client) { client.end(true); client = null; setConn('Disconnected', css('--muted')); setCmdEnabled(false); $('connectBtn').textContent = 'Connect'; return; }
+  stopDemo();
+  if (!window.mqtt) { setConn('mqtt.js failed to load (offline?)', css('--critical')); return; }
+  setConn('Connecting…', css('--warning'));
+  try { localStorage.setItem('se18-broker', $('url').value.trim()); } catch {}
+  client = mqtt.connect($('url').value.trim(), { clientId: 'se18-dash-' + Math.random().toString(16).slice(2, 8), reconnectPeriod: 2000, connectTimeout: 5000 });
+  $('connectBtn').textContent = 'Disconnect';
+  client.on('connect', () => { setConn('Connected', css('--good')); setCmdEnabled(true); client.subscribe('robot/se18/#'); });
+  client.on('reconnect', () => setConn('Reconnecting…', css('--warning')));
+  client.on('offline', () => { setConn('Broker unreachable', css('--critical')); setCmdEnabled(false); });
+  client.on('error', e => { setConn('Error: ' + e.message, css('--critical')); });
+  client.on('message', (topic, buf) => handle(topic, buf.toString()));
+}
+
+function sendCmd(cmd) {
+  if (client && client.connected) client.publish(TOPIC.cmd, cmd);
+  logLine('→ ' + TOPIC.cmd, cmd);
+  if (demoTimer) demo.cmd(cmd);
+}
+
+/* ---------- message handling ---------- */
+function logLine(topic, payload) {
+  const el = $('log');
+  el.textContent = clock(new Date()) + '  ' + topic + '  ' + payload + '\n' + el.textContent.slice(0, 20000);
+}
+
+function handle(topic, text) {
+  logLine(topic, text);
+  if (topic === TOPIC.cmd) return;
+  let m; try { m = JSON.parse(text); } catch { return; }
+  const now = Date.now();
+  if (topic === TOPIC.hb) { lastHb = now; return; }
+  if (topic === TOPIC.status) {
+    if (m.state !== lastState) {
+      lastState = m.state; stateSince = now;
+      $('stateRows').insertAdjacentHTML('afterbegin', `<tr><td class="num">${clock(new Date())}</td><td>${esc(m.state)}</td></tr>`);
+      $('stateEmpty').style.display = 'none';
+    }
+    $('vState').textContent = m.state;
+    const f = m.fault || 'NONE', ok = f === 'NONE';
+    $('vFault').innerHTML = `<span class="ico" style="color:${ok ? 'var(--good)' : 'var(--critical)'}">${ok ? '✔' : '✖'}</span>${esc(f)}`;
+    $('vFaultSub').textContent = ok ? 'All clear' : 'Fault active';
+    $('vSpeed').textContent = m.speed;
+    $('vHump').textContent = Number(m.max_hump_mm).toFixed(1);
+    speed.push({ t: now, v: Number(m.speed) });
+    return;
+  }
+  if (topic === TOPIC.barcode) {
+    $('bcRows').insertAdjacentHTML('afterbegin',
+      `<tr><td class="num">${esc(m.n)}</td><td class="num">${clock(new Date())}</td><td><b>${esc(m.code || '–')}</b></td><td>${esc(m.cmd)}</td><td class="mono">${esc(m.pattern)}</td></tr>`);
+    $('bcEmpty').style.display = 'none';
+    return;
+  }
+  if (topic === TOPIC.obstacle) { drawSweep(m); return; }
+}
+
+/* ---------- heartbeat / state age ticker ---------- */
+setInterval(() => {
+  const now = Date.now();
+  if (!lastHb) { $('hbText').textContent = 'No heartbeat'; $('hbDot').style.background = css('--muted'); }
+  else {
+    const age = (now - lastHb) / 1000, alive = now - lastHb < HB_STALE_MS;
+    $('hbText').textContent = alive ? `Robot alive (${age.toFixed(1)} s)` : `Robot silent ${age.toFixed(0)} s`;
+    $('hbDot').style.background = alive ? css('--good') : css('--critical');
+  }
+  if (stateSince) $('vStateSince').textContent = 'for ' + ((now - stateSince) / 1000).toFixed(0) + ' s';
+  speed = speed.filter(p => p.t >= now - WINDOW_MS);
+  drawSpeed();
+}, 250);
+
+/* ---------- speed line chart (canvas) ---------- */
+let hoverX = null;
+function niceMax(v) { if (v <= 0) return 100; const p = Math.pow(10, Math.floor(Math.log10(v))); for (const m of [1, 2, 2.5, 5, 10]) if (m * p >= v) return m * p; return 10 * p; }
+
+function drawSpeed() {
+  const cv = $('speedCanvas'), dpr = window.devicePixelRatio || 1;
+  const W = cv.clientWidth, H = 240;
+  if (cv.width !== W * dpr) { cv.width = W * dpr; cv.height = H * dpr; cv.style.height = H + 'px'; }
+  const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
+  const L = 44, R = 12, T = 8, B = 26, pw = W - L - R, ph = H - T - B, now = Date.now();
+  const yMax = niceMax(Math.max(100, ...speed.map(p => p.v)));
+  const yMin = Math.min(0, ...speed.map(p => p.v));
+  const x = t => L + (1 - (now - t) / WINDOW_MS) * pw;
+  const y = v => T + (1 - (v - yMin) / (yMax - yMin)) * ph;
+  g.font = '11px system-ui, sans-serif'; g.textBaseline = 'middle';
+  // grid + y ticks
+  for (let i = 0; i <= 4; i++) {
+    const v = yMin + (yMax - yMin) * i / 4, yy = Math.round(y(v)) + 0.5;
+    g.strokeStyle = css('--grid'); g.lineWidth = 1; g.beginPath(); g.moveTo(L, yy); g.lineTo(W - R, yy); g.stroke();
+    g.fillStyle = css('--muted'); g.textAlign = 'right'; g.fillText(Math.round(v), L - 6, yy);
+  }
+  g.strokeStyle = css('--axis'); g.beginPath(); g.moveTo(L, Math.round(y(Math.max(0, yMin))) + 0.5); g.lineTo(W - R, Math.round(y(Math.max(0, yMin))) + 0.5); g.stroke();
+  // x ticks
+  g.textAlign = 'center'; g.textBaseline = 'top'; g.fillStyle = css('--muted');
+  for (let s = 60; s >= 0; s -= 15) g.fillText(s ? `-${s}s` : 'now', L + (1 - s / 60) * pw, H - B + 8);
+  if (!speed.length) { g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('Waiting for robot/se18/status…', L + pw / 2, T + ph / 2); $('speedTip').style.display = 'none'; return; }
+  // area wash + line
+  g.beginPath(); speed.forEach((p, i) => i ? g.lineTo(x(p.t), y(p.v)) : g.moveTo(x(p.t), y(p.v)));
+  g.lineTo(x(speed[speed.length - 1].t), y(Math.max(0, yMin))); g.lineTo(x(speed[0].t), y(Math.max(0, yMin))); g.closePath();
+  g.fillStyle = css('--series-1-wash'); g.fill();
+  g.beginPath(); speed.forEach((p, i) => i ? g.lineTo(x(p.t), y(p.v)) : g.moveTo(x(p.t), y(p.v)));
+  g.strokeStyle = css('--series-1'); g.lineWidth = 2; g.lineJoin = 'round'; g.stroke();
+  // latest-point marker with surface ring
+  const last = speed[speed.length - 1];
+  g.beginPath(); g.arc(x(last.t), y(last.v), 5, 0, 7); g.fillStyle = css('--surface'); g.fill();
+  g.beginPath(); g.arc(x(last.t), y(last.v), 4, 0, 7); g.fillStyle = css('--series-1'); g.fill();
+  // hover crosshair
+  const tip = $('speedTip');
+  if (hoverX == null || hoverX < L || hoverX > W - R) { tip.style.display = 'none'; return; }
+  let best = speed[0]; for (const p of speed) if (Math.abs(x(p.t) - hoverX) < Math.abs(x(best.t) - hoverX)) best = p;
+  const bx = x(best.t), by = y(best.v);
+  g.strokeStyle = css('--axis'); g.lineWidth = 1; g.beginPath(); g.moveTo(Math.round(bx) + 0.5, T); g.lineTo(Math.round(bx) + 0.5, T + ph); g.stroke();
+  g.beginPath(); g.arc(bx, by, 5, 0, 7); g.fillStyle = css('--surface'); g.fill();
+  g.beginPath(); g.arc(bx, by, 4, 0, 7); g.fillStyle = css('--series-1'); g.fill();
+  tip.innerHTML = `<b>${best.v} mm/s</b><br>${clock(new Date(best.t))}`;
+  tip.style.display = 'block';
+  tip.style.left = Math.min(bx + 10, W - tip.offsetWidth - 4) + 'px';
+  tip.style.top = Math.max(0, by - tip.offsetHeight - 10) + 'px';
+}
+$('speedCanvas').addEventListener('pointermove', e => { hoverX = e.offsetX; drawSpeed(); });
+$('speedCanvas').addEventListener('pointerleave', () => { hoverX = null; drawSpeed(); });
+window.addEventListener('resize', drawSpeed);
+
+/* ---------- obstacle sweep (SVG, robot at bottom centre, 90° = straight ahead, >90° = left) ---------- */
+const CX = 200, CY = 210, RMAX = 180;
+function drawSweep(m) {
+  const svg = $('sweepSvg'), deg = m.deg || [], mm = m.mm || [];
+  const valid = mm.filter(v => v >= 0);
+  const scale = niceMax(Math.max(300, ...valid, m.dist_mm > 0 ? m.dist_mm : 0));
+  const pt = (a, r) => [CX + r * Math.cos(a * Math.PI / 180), CY - r * Math.sin(a * Math.PI / 180)];
+  let s = '';
+  for (let i = 1; i <= 4; i++) {                       // range rings
+    const r = RMAX * i / 4;
+    s += `<path d="M${CX - r},${CY} A${r},${r} 0 0 1 ${CX + r},${CY}" fill="none" stroke="var(--grid)"/>`;
+    s += `<text x="${CX + r - 2}" y="${CY + 14}" font-size="10" fill="var(--muted)" text-anchor="middle">${Math.round(scale * i / 4)}</text>`;
+  }
+  s += `<line x1="${CX - RMAX}" y1="${CY}" x2="${CX + RMAX}" y2="${CY}" stroke="var(--axis)"/>`;
+  s += `<text x="${CX - RMAX}" y="${CY + 14}" font-size="10" fill="var(--muted)">LEFT</text><text x="${CX + RMAX}" y="${CY + 14}" font-size="10" fill="var(--muted)" text-anchor="end">RIGHT</text>`;
+  s += `<text x="${CX}" y="${CY + 24}" font-size="10" fill="var(--muted)" text-anchor="middle">mm</text>`;
+  const pts = [];
+  deg.forEach((a, i) => {
+    // servo >90 deg = left, which is also the left half of a standard (counter-clockwise) angle
+    const draw = a, d = mm[i];
+    const [ex, ey] = pt(draw, RMAX);
+    if (a % 30 === 0) {                                  // grid ray and label every 30 deg (rays are 5 deg apart)
+      s += `<line x1="${CX}" y1="${CY}" x2="${ex.toFixed(1)}" y2="${ey.toFixed(1)}" stroke="var(--grid)" stroke-dasharray="3 3"/>`;
+      s += `<text x="${pt(draw, RMAX + 10)[0].toFixed(1)}" y="${pt(draw, RMAX + 10)[1].toFixed(1)}" font-size="10" fill="var(--muted)" text-anchor="middle">${a}°</text>`;
+    }
+    if (d >= 0) {
+      const r = Math.min(d / scale, 1) * RMAX, [px, py] = pt(draw, r);
+      pts.push([px, py]);
+      s += `<line x1="${CX}" y1="${CY}" x2="${px.toFixed(1)}" y2="${py.toFixed(1)}" stroke="var(--series-1)" stroke-width="1" stroke-opacity=".35"/>`;
+      s += `<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="3.5" fill="var(--series-1)" stroke="var(--surface)" stroke-width="1" data-tip="${a}°: ${d} mm"/>`;
+    } else {
+      s += `<circle cx="${ex.toFixed(1)}" cy="${ey.toFixed(1)}" r="3" fill="none" stroke="var(--muted)" stroke-width="1.5" data-tip="${a}°: no echo"/>`;
+    }
+  });
+  if (pts.length > 1) s = s + `<polyline points="${pts.map(p => p.map(v => v.toFixed(1)).join(',')).join(' ')}" fill="none" stroke="var(--series-1)" stroke-width="2" stroke-linejoin="round"/>`;
+  s += `<rect x="${CX - 9}" y="${CY - 12}" width="18" height="12" rx="3" fill="var(--ink)"/>`;   // robot
+  svg.innerHTML = s;
+  svg.querySelectorAll('[data-tip]').forEach(c => {          // tooltip on each ray end
+    c.style.cursor = 'default';
+    c.addEventListener('pointerenter', e => { const t = $('sweepTip'); t.innerHTML = '<b>' + esc(c.dataset.tip) + '</b>'; t.style.display = 'block'; const b = $('sweepBox').getBoundingClientRect(), r = c.getBoundingClientRect(); t.style.left = Math.min(r.left - b.left + 10, b.width - t.offsetWidth - 4) + 'px'; t.style.top = (r.top - b.top - 30) + 'px'; });
+    c.addEventListener('pointerleave', () => $('sweepTip').style.display = 'none');
+  });
+  $('sweepN').textContent = `· sweep #${m.n}, ${clock(new Date())}`;
+  $('oFound').textContent = m.found ? 'Yes' : 'No';
+  const mmTxt = v => (v > 0 ? v + ' mm' : '–');
+  $('oDist').textContent = mmTxt(m.dist_mm); $('oWidth').textContent = mmTxt(m.width_mm);
+  $('oLeft').textContent = mmTxt(m.left_clear_mm); $('oRight').textContent = mmTxt(m.right_clear_mm);
+  $('oSide').textContent = m.side;
+}
+const SWEEP_DEG = Array.from({ length: 25 }, (_, i) => 30 + 5 * i);   // servo 30..150 in 5 deg steps
+drawSweep({ n: '–', deg: SWEEP_DEG, mm: [], side: '–' });
+$('sweepN').textContent = '· waiting for robot/se18/obstacle';
+
+/* ---------- demo mode: plays fake telemetry in the real JSON formats ---------- */
+const demo = {
+  hb: 0, t0: Date.now(), state: 'IDLE', fault: 'NONE', bcN: 0, obN: 0, tick: 0,
+  pub(topic, obj) { handle(topic, JSON.stringify(obj)); },
+  cmd(c) { c = c.toUpperCase(); if (c === 'START') { this.state = 'LINE_FOLLOW'; this.fault = 'NONE'; } if (c === 'STOP') { this.state = 'FAULT'; this.fault = 'REMOTE_STOP'; } if (c === 'RESET') { this.state = 'IDLE'; this.fault = 'NONE'; } },
+  step() {
+    const t = Date.now() - this.t0; this.tick++;
+    if (this.tick % 2 === 0) this.pub(TOPIC.hb, { hb: ++this.hb, t });
+    const seq = ['LINE_FOLLOW', 'LINE_FOLLOW', 'LINE_FOLLOW', 'BARCODE_ACTION', 'LINE_FOLLOW', 'HUMP_CROSSING', 'LINE_FOLLOW', 'OBSTACLE_AVOID'];
+    if (this.state !== 'IDLE' && this.state !== 'FAULT' && this.tick % 10 === 0) {
+      this.state = seq[(this.tick / 10) % seq.length];
+      if (this.state === 'BARCODE_ACTION') { const c = 'ABCDE'[this.bcN % 5]; this.pub(TOPIC.barcode, { code: c, cmd: ['LEFT', 'RIGHT', 'STRAIGHT', 'UTURN', 'STOP'][this.bcN % 5], n: ++this.bcN, pattern: 'NwNnWnWnN', t }); }
+      if (this.state === 'OBSTACLE_AVOID') this.pub(TOPIC.obstacle, { n: ++this.obN, deg: SWEEP_DEG, mm: SWEEP_DEG.map(a => a > 140 ? -1 : (a >= 75 && a <= 105 ? 190 + Math.random() * 20 | 0 : 300 + Math.random() * 150 | 0)), found: true, dist_mm: 195, width_mm: 120, left_clear_mm: 320, right_clear_mm: 90, side: 'LEFT', t });
+    }
+    const base = { IDLE: 0, FAULT: 0, LINE_FOLLOW: 220, BARCODE_ACTION: 90, HUMP_CROSSING: 140, OBSTACLE_AVOID: 70 }[this.state] || 0;
+    this.pub(TOPIC.status, { state: this.state, speed: base ? Math.round(base + Math.sin(this.tick / 3) * 25) : 0, max_hump_mm: this.state === 'HUMP_CROSSING' ? 18.4 : 12.1, fault: this.fault, t });
+  }
+};
+function stopDemo() { if (demoTimer) { clearInterval(demoTimer); demoTimer = null; $('demoBtn').textContent = 'Demo'; setCmdEnabled(false); setConn('Disconnected', css('--muted')); } }
+$('demoBtn').onclick = () => {
+  if (demoTimer) return stopDemo();
+  if (client) connect();                               // disconnect first
+  demo.t0 = Date.now(); demo.state = 'LINE_FOLLOW'; demo.fault = 'NONE';
+  demoTimer = setInterval(() => demo.step(), 500);
+  $('demoBtn').textContent = 'Stop demo'; setConn('Demo data (no broker)', css('--warning')); setCmdEnabled(true);
+};
+$('connectBtn').onclick = connect;
+$('btnStart').onclick = () => sendCmd('start');
+$('btnStop').onclick = () => sendCmd('stop');
+$('btnReset').onclick = () => sendCmd('reset');
+
+/* Connect as soon as the page opens, to the broker URL used last time (or the default). ?demo plays demo data instead. */
+try { const saved = localStorage.getItem('se18-broker'); if (saved) $('url').value = saved; } catch {}
+if (new URLSearchParams(location.search).has('demo')) $('demoBtn').click(); else connect();
+</script>
+</body>
+</html>

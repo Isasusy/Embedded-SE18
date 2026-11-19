@@ -98,3 +98,25 @@ int tm_format_barcode(char *buf, int cap, const char *code, int nav, const char 
 	put_c(&w, '}');
 	return finish(&w);
 }
+
+static int32_t round_i(float x) { return (int32_t)(x + (x < 0 ? -0.5f : 0.5f)); }
+
+int tm_format_obstacle(char *buf, int cap, const obstacle_profile_t *p, uint32_t n)
+{
+	w_t w = { buf, cap, 0 };
+	int rays = p->n < 0 ? 0 : (p->n > OBST_PROFILE_MAX_RAYS ? OBST_PROFILE_MAX_RAYS : p->n);
+	put_s(&w, "{\"n\":"); put_u(&w, n);
+	put_s(&w, ",\"deg\":[");
+	for (int i = 0; i < rays; i++) { if (i) put_c(&w, ','); put_i(&w, p->servo_deg[i]); }
+	put_s(&w, "],\"mm\":[");
+	for (int i = 0; i < rays; i++) { if (i) put_c(&w, ','); put_i(&w, p->dist_mm[i] < 0 ? -1 : p->dist_mm[i]); }
+	put_s(&w, "],\"found\":"); put_s(&w, p->ob.found ? "true" : "false");
+	put_s(&w, ",\"dist_mm\":"); put_i(&w, round_i(p->ob.distance_mm));
+	put_s(&w, ",\"width_mm\":"); put_i(&w, round_i(p->ob.width_mm));
+	put_s(&w, ",\"left_clear_mm\":"); put_i(&w, round_i(p->ob.left_clear_mm));
+	put_s(&w, ",\"right_clear_mm\":"); put_i(&w, round_i(p->ob.right_clear_mm));
+	put_s(&w, ",\"side\":\""); put_s(&w, p->ob.side > 0 ? "LEFT" : (p->ob.side < 0 ? "RIGHT" : "NONE"));
+	put_s(&w, "\",\"t\":"); put_u(&w, p->timestamp_ms);
+	put_c(&w, '}');
+	return finish(&w);
+}

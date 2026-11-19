@@ -34,7 +34,7 @@
 #define VC_ALIVE_MS		100		/* NFR10: a task silent longer than this = fault */
 #define VC_RECOVER_TIMEOUT_MS	4000
 #define VC_HUMP_TIMEOUT_MS	6000
-#define VC_SCAN_TIMEOUT_MS	6000
+#define VC_SCAN_TIMEOUT_MS	9000
 #define VC_SEARCH_TIMEOUT_MS	5000
 #define VC_STATUS_MS		500		/* NFR5: telemetry at 2 Hz */
 #define VC_SETTLE_TICKS		2		/* ignore cmd_done this long after sending a manoeuvre */
@@ -78,9 +78,14 @@
 #define SCAN_TRACK_CLEAR_PINGS	4		/* after a hit the servo stays on the obstacle until this many clear pings in a row */
 #define SCAN_NEAR_MM		400		/* a ray shorter than this belongs to the obstacle */
 #define SCAN_MIN_CLEAR_MM	150		/* a side narrower than this cannot be used */
-#define SCAN_ANGLE_MAX		40		/* sweep -40 .. +40 degrees (+ = left) */
-#define SCAN_ANGLE_STEP		4
-#define SCAN_SETTLE_MS		60		/* servo settling time per angle */
+/* PROFILE sweep (after the car has stopped for an obstacle). Angles are ABSOLUTE servo degrees, SCAN_SERVO_CENTRE_DEG
+   = straight ahead, so 30..150 is 60 degrees either side. Below the centre = the robot's right, above = its left. */
+#define SCAN_SERVO_CENTRE_DEG	90
+#define SCAN_PROFILE_START_DEG	30
+#define SCAN_PROFILE_END_DEG	150
+#define SCAN_PROFILE_STEP_DEG	5		/* 30, 35, ... 150 = 25 pings */
+#define SCAN_GLIDE_MS_PER_DEG	8		/* smooth servo moves: 1 degree every this many ms (125 deg/s) */
+#define SCAN_SETTLE_MS		40		/* after the glide reaches an angle, wait this long before pinging */
 #define SERVO_US_MIN		500		/* SG90 pulse widths */
 #define SERVO_US_MAX		2500
 #define SERVO_TRIM_DEG		(-20)		/* adjust if "straight ahead" is not 0 (+ = turn left / anticlockwise, - = right / clockwise).

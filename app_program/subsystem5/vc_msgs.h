@@ -61,4 +61,17 @@ typedef struct {
 	int32_t		side;		/* chosen side: +1 left, -1 right, 0 = neither is wide enough */
 } obstacle_t;
 
+/* Obstacle Scan -> Telemetry (S1) : the last profiling sweep, raw rays plus the analysis.
+   Shared memory, not a message buffer (S1 runs inside the WiFi task on the other core and must never block):
+   scan_task.c writes s5_profile under the sequence counter s5_profile_seq (odd while writing), S1 copies it and
+   keeps the copy only if the counter was even and unchanged across the copy. */
+#define OBST_PROFILE_MAX_RAYS	25	/* 30..150 in 5 deg steps; the JSON must fit lwIP's MQTT output buffer (512 bytes, lwipopts.h) */
+typedef struct {
+	int32_t		n;				/* rays used */
+	int16_t		servo_deg[OBST_PROFILE_MAX_RAYS];	/* absolute servo angle, 90 = straight ahead */
+	int16_t		dist_mm[OBST_PROFILE_MAX_RAYS];	/* -1 = no echo */
+	obstacle_t	ob;				/* scan_analyze() result */
+	uint32_t	timestamp_ms;
+} obstacle_profile_t;
+
 #endif /* VC_MSGS_H */

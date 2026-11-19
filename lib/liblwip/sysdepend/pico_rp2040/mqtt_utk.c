@@ -17,6 +17,7 @@
 
 #include "lwip/apps/mqtt.h"
 #include "lwip/ip_addr.h"
+#include "lwip/sys.h"		/* SE18: sys_now() for s1_service() */
 #include "lwip/timeouts.h"
 #include "wifi_secrets.h"
 #include "mqtt_utk.h"
@@ -222,13 +223,16 @@ static void connection_cb(mqtt_client_t *c, void *arg, mqtt_connection_status_t 
 		sys_untimeout(heartbeat_timeout, NULL);
 		sys_timeout(MQTT_UTK_HEARTBEAT_MS, heartbeat_timeout, NULL);
 	} else {
-		/* mqtt_client_connect() reconnects on its own for a dropped
-		 * keepalive; a rejected/never-established connection does not
-		 * retry itself, so do that here -- on a delay, so a broker
-		 * that keeps rejecting (e.g. bad client ID) can't turn this
-		 * into a tight reconnect loop. */
+		/* lwIP's MQTT client never reconnects by itself (refused, failed
+		 * or dropped alike), so retry here, on a delay so a broker that
+		 * keeps rejecting can't turn this into a tight loop.
+		 * SE18: set the guard so the poll loop's mqtt_utk_start() does not
+		 * start its own attempt next to this timer's (ERR_ISCONN console
+		 * flood, two retry chains in the MEMP_SYS_TIMEOUT pool). */
 		tm_printf((UB*)"mqtt: connection status %d, retrying in %ds\n",
 			  (int)status, MQTT_UTK_RETRY_MS / 1000);
+		connecting = 1;						/* SE18 */
+		sys_untimeout(retry_timeout, NULL);			/* SE18 */
 		sys_timeout(MQTT_UTK_RETRY_MS, retry_timeout, NULL);
 	}
 }

@@ -1,0 +1,275 @@
+WiFi/MQTT PC harness run, 2026-11-12 (UTC), repo HEAD 5255006 + uncommitted working tree
+
+######## CURRENT CODE ########
+	../../../lib/liblwip/sysdepend/pico_rp2040/mqtt_utk.c
+[connect] broker up, RTT 20 ms, 60 s of normal running
+  -- t=61.0 s  connects=1  connect() calls=1  ERR_ISCONN=0  'connect() failed' console lines=0  timer pool peak=3/4
+     robot/se18/status        queued=119  delivered=119  ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     robot/se18/heartbeat     queued=59   delivered=59   ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     robot/se18/barcode       queued=0    delivered=0    ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     robot/se18/cmd           queued=0    delivered=0    ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     mtk3smp-pico/heartbeat   queued=11   delivered=11   ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     heartbeats missing=0  max heartbeat gap=1000 ms  oldest status delivered=52 ms old  VC status sent=120 dropped(mbf full)=0
+  ok:   connected once
+  ok:   robot/se18/cmd is subscribed at the broker
+  ok:   status at 2 Hz (119 in 60 s)
+  ok:   heartbeat at 1 Hz (59 in 60 s)
+  ok:   no heartbeat missing, max gap 1000 ms
+  ok:   status JSON: {"state":"LINE_FOLLOW","speed":150,"max_hump_mm":12.3,"fault":"NONE","t":60500}
+  ok:   no publish refused
+  ok:   template heartbeat still published every 5 s (11)
+  ok:   status latency 52 ms
+  => 9 checks, 0 failed
+
+[commands] remote commands on robot/se18/cmd -> mbf_remote_cmd (what vc_task polls)
+  ok:   "start" -> 0 (expected 0) within 30 ms
+  ok:   "{"cmd":"STOP"}" -> 1 (expected 1) within 30 ms
+  ok:   "Reset" -> 2 (expected 2) within 30 ms
+  ok:   "start" (fragmented) -> 0 (expected 0) within 30 ms
+  ok:   "restart" -> -1 (expected -1) within 30 ms
+  ok:   "start stop" -> -1 (expected -1) within 30 ms
+  ok:   "go" -> -1 (expected -1) within 30 ms
+  ok:   205-byte payload with 'stop' after byte 127 is truncated and ignored
+  ok:   205-byte payload starting with 'stop' still works (truncated to 127)
+  ok:   a different topic is not delivered
+  ok:   12 commands while the VC is busy: 8 kept (mbf_remote_cmd depth), rest dropped without blocking
+  => 12 checks, 0 failed
+
+[barcode] barcode reads -> robot/se18/barcode
+  ok:   one publish per read (1)
+  ok:   barcode JSON: {"code":"A","cmd":"LEFT","n":1,"pattern":"1010","t":3042} (sent ~42 ms after the read)
+  ok:   failed read: {"code":"","cmd":"UNREADABLE","n":2,"pattern":"1010","t":3342}
+  ok:   two reads within 100 ms: only the newest is sent (n=4), count 3
+  => 4 checks, 0 failed
+
+[rtt 20] 60 s, VC 2 Hz + every 5 s a state-change burst (3 statuses) and a barcode read
+  -- t=63.0 s  connects=1  connect() calls=1  ERR_ISCONN=0  'connect() failed' console lines=0  timer pool peak=3/4
+     robot/se18/status        queued=159  delivered=159  ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     robot/se18/heartbeat     queued=61   delivered=61   ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     robot/se18/barcode       queued=12   delivered=12   ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     robot/se18/cmd           queued=0    delivered=0    ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     mtk3smp-pico/heartbeat   queued=12   delivered=12   ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     heartbeats missing=0  max heartbeat gap=1000 ms  oldest status delivered=152 ms old  VC status sent=160 dropped(mbf full)=0
+  ok:   every status the VC queued reached the broker (159 of 160; lwIP refused a publish 0 times)
+  ok:   no heartbeat lost (0)
+  ok:   every barcode read reached the broker (12 of 12)
+  => 3 checks, 0 failed
+
+[rtt 100] 60 s, VC 2 Hz + every 5 s a state-change burst (3 statuses) and a barcode read
+  -- t=63.0 s  connects=1  connect() calls=1  ERR_ISCONN=0  'connect() failed' console lines=0  timer pool peak=3/4
+     robot/se18/status        queued=159  delivered=159  ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     robot/se18/heartbeat     queued=61   delivered=61   ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     robot/se18/barcode       queued=12   delivered=12   ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     robot/se18/cmd           queued=0    delivered=0    ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     mtk3smp-pico/heartbeat   queued=12   delivered=12   ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     heartbeats missing=0  max heartbeat gap=1000 ms  oldest status delivered=152 ms old  VC status sent=160 dropped(mbf full)=0
+  ok:   every status the VC queued reached the broker (159 of 160; lwIP refused a publish 0 times)
+  ok:   no heartbeat lost (0)
+  ok:   every barcode read reached the broker (12 of 12)
+  => 3 checks, 0 failed
+
+[rtt 200] 60 s, VC 2 Hz + every 5 s a state-change burst (3 statuses) and a barcode read
+  -- t=63.0 s  connects=1  connect() calls=1  ERR_ISCONN=0  'connect() failed' console lines=0  timer pool peak=3/4
+     robot/se18/status        queued=147  delivered=147  ERR_MEM(req slots)=12  ERR_MEM(ring)=0   ERR_CONN=0
+     robot/se18/heartbeat     queued=61   delivered=61   ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     robot/se18/barcode       queued=12   delivered=12   ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     robot/se18/cmd           queued=0    delivered=0    ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     mtk3smp-pico/heartbeat   queued=12   delivered=12   ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     heartbeats missing=0  max heartbeat gap=1000 ms  oldest status delivered=202 ms old  VC status sent=160 dropped(mbf full)=0
+  FAIL: every status the VC queued reached the broker (147 of 160; lwIP refused a publish 12 times)
+  ok:   no heartbeat lost (0)
+  ok:   every barcode read reached the broker (12 of 12)
+  => 3 checks, 1 failed
+
+[rtt 400] 60 s, VC 2 Hz + every 5 s a state-change burst (3 statuses) and a barcode read
+  -- t=63.0 s  connects=1  connect() calls=1  ERR_ISCONN=0  'connect() failed' console lines=0  timer pool peak=3/4
+     robot/se18/status        queued=135  delivered=135  ERR_MEM(req slots)=24  ERR_MEM(ring)=0   ERR_CONN=0
+     robot/se18/heartbeat     queued=61   delivered=60   ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     robot/se18/barcode       queued=12   delivered=12   ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     robot/se18/cmd           queued=0    delivered=0    ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     mtk3smp-pico/heartbeat   queued=12   delivered=12   ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     heartbeats missing=0  max heartbeat gap=1000 ms  oldest status delivered=602 ms old  VC status sent=160 dropped(mbf full)=0
+  FAIL: every status the VC queued reached the broker (135 of 160; lwIP refused a publish 24 times)
+  ok:   no heartbeat lost (0)
+  ok:   every barcode read reached the broker (12 of 12)
+  => 3 checks, 1 failed
+
+[outage closed] broker process stopped (port refuses) at 20 s for 30 s
+  -- t=91.0 s  connects=2  connect() calls=32  ERR_ISCONN=11  'connect() failed' console lines=11  timer pool peak=4/4
+     robot/se18/status        queued=126  delivered=126  ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     robot/se18/heartbeat     queued=59   delivered=59   ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     robot/se18/barcode       queued=0    delivered=0    ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     robot/se18/cmd           queued=0    delivered=0    ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     mtk3smp-pico/heartbeat   queued=10   delivered=10   ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     heartbeats missing=0  max heartbeat gap=31188 ms  oldest status delivered=30340 ms old  VC status sent=180 dropped(mbf full)=53
+  ok:   the WiFi task did not halt
+  ok:   reconnected 0.2 s after the broker came back
+  ok:   console not flooded ('connect() failed' printed 11 times)
+     statuses delivered while broker was down: 0
+  => 3 checks, 0 failed
+
+[outage closed] broker process stopped (port refuses) at 20 s for 600 s
+  -- t=661.0 s  connects=2  connect() calls=410  ERR_ISCONN=11  'connect() failed' console lines=11  timer pool peak=4/4
+     robot/se18/status        queued=124  delivered=124  ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     robot/se18/heartbeat     queued=58   delivered=58   ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     robot/se18/barcode       queued=0    delivered=0    ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     robot/se18/cmd           queued=0    delivered=0    ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     mtk3smp-pico/heartbeat   queued=10   delivered=10   ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     heartbeats missing=0  max heartbeat gap=601968 ms  oldest status delivered=601120 ms old  VC status sent=1320 dropped(mbf full)=1195
+  ok:   the WiFi task did not halt
+  ok:   reconnected 1.0 s after the broker came back
+  ok:   console not flooded ('connect() failed' printed 11 times)
+     statuses delivered while broker was down: 0
+  => 3 checks, 0 failed
+
+[outage silent] broker unreachable (laptop left the hotspot) at 20 s for 180 s
+  -- t=301.0 s  connects=2  connect() calls=43525  ERR_ISCONN=43522  'connect() failed' console lines=43522  timer pool peak=3/4
+     robot/se18/status        queued=246  delivered=240  ERR_MEM(req slots)=174 ERR_MEM(ring)=0   ERR_CONN=0
+     robot/se18/heartbeat     queued=119  delivered=116  ERR_MEM(req slots)=87  ERR_MEM(ring)=0   ERR_CONN=0
+     robot/se18/barcode       queued=0    delivered=0    ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     robot/se18/cmd           queued=0    delivered=0    ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     mtk3smp-pico/heartbeat   queued=25   delivered=22   ERR_MEM(req slots)=15  ERR_MEM(ring)=0   ERR_CONN=0
+     heartbeats missing=90  max heartbeat gap=184020 ms  oldest status delivered=93172 ms old  VC status sent=600 dropped(mbf full)=179
+  ok:   the WiFi task did not halt
+  ok:   reconnected 3.1 s after the broker came back
+  FAIL: console not flooded ('connect() failed' printed 43522 times)
+     statuses delivered while broker was down: 0
+  => 3 checks, 1 failed
+
+grep: (standard input): binary file matches
+######## WITH PROPOSED FIXES ########
+[connect] broker up, RTT 20 ms, 60 s of normal running
+  -- t=61.0 s  connects=1  connect() calls=1  ERR_ISCONN=0  'connect() failed' console lines=0  timer pool peak=3/4
+     robot/se18/status        queued=119  delivered=119  ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     robot/se18/heartbeat     queued=59   delivered=59   ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     robot/se18/barcode       queued=0    delivered=0    ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     robot/se18/cmd           queued=0    delivered=0    ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     mtk3smp-pico/heartbeat   queued=11   delivered=11   ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     heartbeats missing=0  max heartbeat gap=1000 ms  oldest status delivered=52 ms old  VC status sent=120 dropped(mbf full)=0
+  ok:   connected once
+  ok:   robot/se18/cmd is subscribed at the broker
+  ok:   status at 2 Hz (119 in 60 s)
+  ok:   heartbeat at 1 Hz (59 in 60 s)
+  ok:   no heartbeat missing, max gap 1000 ms
+  ok:   status JSON: {"state":"LINE_FOLLOW","speed":150,"max_hump_mm":12.3,"fault":"NONE","t":60500}
+  ok:   no publish refused
+  ok:   template heartbeat still published every 5 s (11)
+  ok:   status latency 52 ms
+  => 9 checks, 0 failed
+
+[commands] remote commands on robot/se18/cmd -> mbf_remote_cmd (what vc_task polls)
+  ok:   "start" -> 0 (expected 0) within 30 ms
+  ok:   "{"cmd":"STOP"}" -> 1 (expected 1) within 30 ms
+  ok:   "Reset" -> 2 (expected 2) within 30 ms
+  ok:   "start" (fragmented) -> 0 (expected 0) within 30 ms
+  ok:   "restart" -> -1 (expected -1) within 30 ms
+  ok:   "start stop" -> -1 (expected -1) within 30 ms
+  ok:   "go" -> -1 (expected -1) within 30 ms
+  ok:   205-byte payload with 'stop' after byte 127 is truncated and ignored
+  ok:   205-byte payload starting with 'stop' still works (truncated to 127)
+  ok:   a different topic is not delivered
+  ok:   12 commands while the VC is busy: 8 kept (mbf_remote_cmd depth), rest dropped without blocking
+  => 12 checks, 0 failed
+
+[barcode] barcode reads -> robot/se18/barcode
+  ok:   one publish per read (1)
+  ok:   barcode JSON: {"code":"A","cmd":"LEFT","n":1,"pattern":"1010","t":3042} (sent ~42 ms after the read)
+  ok:   failed read: {"code":"","cmd":"UNREADABLE","n":2,"pattern":"1010","t":3342}
+  ok:   two reads within 100 ms: only the newest is sent (n=4), count 3
+  => 4 checks, 0 failed
+
+[rtt 20] 60 s, VC 2 Hz + every 5 s a state-change burst (3 statuses) and a barcode read
+  -- t=63.0 s  connects=1  connect() calls=1  ERR_ISCONN=0  'connect() failed' console lines=0  timer pool peak=3/4
+     robot/se18/status        queued=159  delivered=159  ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     robot/se18/heartbeat     queued=61   delivered=61   ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     robot/se18/barcode       queued=12   delivered=12   ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     robot/se18/cmd           queued=0    delivered=0    ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     mtk3smp-pico/heartbeat   queued=12   delivered=12   ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     heartbeats missing=0  max heartbeat gap=1000 ms  oldest status delivered=152 ms old  VC status sent=160 dropped(mbf full)=0
+  ok:   every status the VC queued reached the broker (159 of 160; lwIP refused a publish 0 times)
+  ok:   no heartbeat lost (0)
+  ok:   every barcode read reached the broker (12 of 12)
+  => 3 checks, 0 failed
+
+[rtt 100] 60 s, VC 2 Hz + every 5 s a state-change burst (3 statuses) and a barcode read
+  -- t=63.0 s  connects=1  connect() calls=1  ERR_ISCONN=0  'connect() failed' console lines=0  timer pool peak=3/4
+     robot/se18/status        queued=159  delivered=159  ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     robot/se18/heartbeat     queued=61   delivered=61   ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     robot/se18/barcode       queued=12   delivered=12   ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     robot/se18/cmd           queued=0    delivered=0    ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     mtk3smp-pico/heartbeat   queued=12   delivered=12   ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     heartbeats missing=0  max heartbeat gap=1000 ms  oldest status delivered=152 ms old  VC status sent=160 dropped(mbf full)=0
+  ok:   every status the VC queued reached the broker (159 of 160; lwIP refused a publish 0 times)
+  ok:   no heartbeat lost (0)
+  ok:   every barcode read reached the broker (12 of 12)
+  => 3 checks, 0 failed
+
+[rtt 200] 60 s, VC 2 Hz + every 5 s a state-change burst (3 statuses) and a barcode read
+  -- t=63.0 s  connects=1  connect() calls=1  ERR_ISCONN=0  'connect() failed' console lines=0  timer pool peak=3/4
+     robot/se18/status        queued=159  delivered=159  ERR_MEM(req slots)=12  ERR_MEM(ring)=0   ERR_CONN=0
+     robot/se18/heartbeat     queued=61   delivered=61   ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     robot/se18/barcode       queued=12   delivered=12   ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     robot/se18/cmd           queued=0    delivered=0    ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     mtk3smp-pico/heartbeat   queued=12   delivered=12   ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     heartbeats missing=0  max heartbeat gap=1000 ms  oldest status delivered=302 ms old  VC status sent=160 dropped(mbf full)=0
+  ok:   every status the VC queued reached the broker (159 of 160; lwIP refused a publish 12 times)
+  ok:   no heartbeat lost (0)
+  ok:   every barcode read reached the broker (12 of 12)
+  => 3 checks, 0 failed
+
+[rtt 400] 60 s, VC 2 Hz + every 5 s a state-change burst (3 statuses) and a barcode read
+  -- t=63.0 s  connects=1  connect() calls=1  ERR_ISCONN=0  'connect() failed' console lines=0  timer pool peak=3/4
+     robot/se18/status        queued=159  delivered=159  ERR_MEM(req slots)=24  ERR_MEM(ring)=0   ERR_CONN=0
+     robot/se18/heartbeat     queued=61   delivered=60   ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     robot/se18/barcode       queued=12   delivered=12   ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     robot/se18/cmd           queued=0    delivered=0    ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     mtk3smp-pico/heartbeat   queued=12   delivered=12   ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     heartbeats missing=0  max heartbeat gap=1000 ms  oldest status delivered=602 ms old  VC status sent=160 dropped(mbf full)=0
+  ok:   every status the VC queued reached the broker (159 of 160; lwIP refused a publish 24 times)
+  ok:   no heartbeat lost (0)
+  ok:   every barcode read reached the broker (12 of 12)
+  => 3 checks, 0 failed
+
+[outage closed] broker process stopped (port refuses) at 20 s for 30 s
+  -- t=91.0 s  connects=2  connect() calls=11  ERR_ISCONN=0  'connect() failed' console lines=0  timer pool peak=3/4
+     robot/se18/status        queued=126  delivered=126  ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     robot/se18/heartbeat     queued=59   delivered=59   ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     robot/se18/barcode       queued=0    delivered=0    ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     robot/se18/cmd           queued=0    delivered=0    ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     mtk3smp-pico/heartbeat   queued=10   delivered=10   ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     heartbeats missing=0  max heartbeat gap=31188 ms  oldest status delivered=30340 ms old  VC status sent=180 dropped(mbf full)=53
+  ok:   the WiFi task did not halt
+  ok:   reconnected 0.2 s after the broker came back
+  ok:   console not flooded ('connect() failed' printed 0 times)
+     statuses delivered while broker was down: 0
+  => 3 checks, 0 failed
+
+[outage closed] broker process stopped (port refuses) at 20 s for 600 s
+  -- t=661.0 s  connects=2  connect() calls=200  ERR_ISCONN=0  'connect() failed' console lines=0  timer pool peak=3/4
+     robot/se18/status        queued=124  delivered=124  ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     robot/se18/heartbeat     queued=58   delivered=58   ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     robot/se18/barcode       queued=0    delivered=0    ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     robot/se18/cmd           queued=0    delivered=0    ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     mtk3smp-pico/heartbeat   queued=10   delivered=10   ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     heartbeats missing=0  max heartbeat gap=601968 ms  oldest status delivered=601120 ms old  VC status sent=1320 dropped(mbf full)=1195
+  ok:   the WiFi task did not halt
+  ok:   reconnected 1.0 s after the broker came back
+  ok:   console not flooded ('connect() failed' printed 0 times)
+     statuses delivered while broker was down: 0
+  => 3 checks, 0 failed
+
+[outage silent] broker unreachable (laptop left the hotspot) at 20 s for 180 s
+  -- t=301.0 s  connects=2  connect() calls=3  ERR_ISCONN=0  'connect() failed' console lines=0  timer pool peak=3/4
+     robot/se18/status        queued=237  delivered=229  ERR_MEM(req slots)=888 ERR_MEM(ring)=0   ERR_CONN=0
+     robot/se18/heartbeat     queued=111  delivered=110  ERR_MEM(req slots)=89  ERR_MEM(ring)=0   ERR_CONN=0
+     robot/se18/barcode       queued=0    delivered=0    ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     robot/se18/cmd           queued=0    delivered=0    ERR_MEM(req slots)=0   ERR_MEM(ring)=0   ERR_CONN=0
+     mtk3smp-pico/heartbeat   queued=24   delivered=21   ERR_MEM(req slots)=15  ERR_MEM(ring)=0   ERR_CONN=0
+     heartbeats missing=90  max heartbeat gap=190020 ms  oldest status delivered=185172 ms old  VC status sent=600 dropped(mbf full)=362
+  ok:   the WiFi task did not halt
+  ok:   reconnected 9.1 s after the broker came back
+  ok:   console not flooded ('connect() failed' printed 0 times)
+     statuses delivered while broker was down: 0
+  => 3 checks, 0 failed
+
+grep: (standard input): binary file matches

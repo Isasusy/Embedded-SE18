@@ -8,14 +8,21 @@ static int fails, checks;
 #define CHECK(c, ...) do { checks++; if (!(c)) { fails++; printf("FAIL line %d: ", __LINE__); printf(__VA_ARGS__); printf("\n"); } } while (0)
 
 /* ---------- scan ---------- */
-static void sweep(int *ang, int *d, int *n, float obst_w, float obst_d, float obst_off)
+/* a fine sweep for the algorithm's accuracy checks (the robot's profile sweep is tested further down) */
+#define T_ANGLE_MAX	40
+#define T_ANGLE_STEP	4
+static void sweep_range(int *ang, int *d, int *n, float obst_w, float obst_d, float obst_off, int lo, int hi, int step)
 {
 	*n = 0;
-	for (int a = -SCAN_ANGLE_MAX; a <= SCAN_ANGLE_MAX; a += SCAN_ANGLE_STEP) {
+	for (int a = lo; a <= hi; a += step) {
 		float lat = obst_d * tanf(a * 0.0174533f);		/* where this ray crosses the obstacle's range */
 		bool hit = lat >= obst_off - obst_w / 2 && lat <= obst_off + obst_w / 2;
 		ang[*n] = a; d[*n] = hit ? (int)(obst_d / cosf(a * 0.0174533f)) : -1; (*n)++;
 	}
+}
+static void sweep(int *ang, int *d, int *n, float obst_w, float obst_d, float obst_off)
+{
+	sweep_range(ang, d, n, obst_w, obst_d, obst_off, -T_ANGLE_MAX, T_ANGLE_MAX, T_ANGLE_STEP);
 }
 
 /* ---------- VC harness ---------- */
@@ -60,6 +67,18 @@ int main(void)
 	for (int i = 0; i < n; i++) if (ang[i] >= 20) d[i] = 250;
 	scan_analyze(ang, d, n, &ob);
 	CHECK(ob.found && ob.side == -1, "left blocked -> choose right (side=%d, L=%.0f R=%.0f)", ob.side, ob.left_clear_mm, ob.right_clear_mm);
+
+	/* 6. the robot's profile sweep: servo 30..150 deg in 5 deg steps = 25 rays, relative -60..+60 */
+	sweep_range(ang, d, &n, 120, 200, 0, SCAN_PROFILE_START_DEG - SCAN_SERVO_CENTRE_DEG,
+		    SCAN_PROFILE_END_DEG - SCAN_SERVO_CENTRE_DEG, SCAN_PROFILE_STEP_DEG);
+	CHECK(n == 25 && ang[0] == -60 && ang[12] == 0 && ang[24] == 60 && n <= OBST_PROFILE_MAX_RAYS, "profile sweep is 25 rays -60..+60 (n=%d)", n);
+	scan_analyze(ang, d, n, &ob);
+	CHECK(ob.found && fabsf(ob.distance_mm - 200) < 10, "profile: found at %.0f mm", ob.distance_mm);
+	CHECK(ob.side != 0 && ob.left_clear_mm > SCAN_MIN_CLEAR_MM, "profile: a side is free (L=%.0f R=%.0f)", ob.left_clear_mm, ob.right_clear_mm);
+	/* 7. profile: obstacle covering centre and the right rays -> go left */
+	for (int i = 0; i < n; i++) d[i] = ang[i] <= 0 ? 220 : -1;
+	scan_analyze(ang, d, n, &ob);
+	CHECK(ob.found && ob.side == +1 && ob.right_clear_mm == 0, "profile: right blocked -> left (side=%d)", ob.side);
 
 	/* ---------- VC ---------- */
 	h_t h;

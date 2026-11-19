@@ -14,6 +14,12 @@ IMPORT volatile char	s3_last_barcode[8];
 IMPORT volatile char	s3_last_pattern[];
 IMPORT volatile int	s3_last_nav;
 IMPORT volatile unsigned s3_barcode_count;
+IMPORT volatile unsigned s3_barcode_seq;	/* odd while barcode_task is writing the fields above */
+
+/* The last obstacle profiling sweep, kept by the Obstacle Scan (S5, scan_task.c). s5_profile_seq is odd while it is
+   being written and goes up by 2 per profile. */
+IMPORT volatile obstacle_profile_t s5_profile;
+IMPORT volatile unsigned s5_profile_seq;
 
 EXPORT ER subsystem1_init(void)
 {
@@ -35,20 +41,26 @@ EXPORT void s1_service(s1_publish_fn publish, void *ctx, uint32_t now_ms)
 {
 	static uint32_t last_hb_ms, hb_seq;
 	static bool hb_started;
-	static unsigned bc_seen;
-	char buf[200];
-	robot_status_t st;
+	static unsigned bc_seen, ob_seen;
+	static char buf[512];			/* static: the obstacle JSON is too big for the WiFi task's stack */
 
+	/* A status lwIP refuses (all MQTT requests still waiting for a TCP ACK) is kept and sent on the next call. */
+	static robot_status_t st_pend;
+	static bool st_have;
 	for (int i = 0; i < 2 && mbf_status > 0; i++) {	/* small bites: lwIP's MQTT output buffer is small */
-		if (tk_rcv_mbf(mbf_status, &st, TMO_POL) != (INT)sizeof st)
+		if (!st_have) {
+			if (tk_rcv_mbf(mbf_status, &st_pend, TMO_POL) != (INT)sizeof st_pend)
+				break;
+			st_have = true;
+		}
+		int n = tm_format_status(buf, sizeof buf, &st_pend);
+		if (n > 0 && publish(ctx, S1_TOPIC_STATUS, buf, n) != 0)
 			break;
-		int n = tm_format_status(buf, sizeof buf, &st);
-		if (n > 0)
-			publish(ctx, S1_TOPIC_STATUS, buf, n);
+		st_have = false;
 	}
 
-	unsigned c1 = s3_barcode_count;
-	if (c1 != bc_seen) {
+	unsigned c1 = s3_barcode_count, b1 = s3_barcode_seq;
+	if (c1 != bc_seen && !(b1 & 1u)) {
 		char code[8], pat[80];
 		__asm__ volatile ("dmb" ::: "memory");
 		for (int i = 0; i < 8; i++) code[i] = s3_last_barcode[i];
@@ -56,10 +68,26 @@ EXPORT void s1_service(s1_publish_fn publish, void *ctx, uint32_t now_ms)
 		code[7] = 0; pat[79] = 0;
 		int nav = s3_last_nav;
 		__asm__ volatile ("dmb" ::: "memory");
-		if (s3_barcode_count == c1) {
+		if (s3_barcode_seq == b1 && s3_barcode_count == c1) {
 			int n = tm_format_barcode(buf, sizeof buf, code, nav, pat, c1, now_ms);
 			if (n > 0 && publish(ctx, S1_TOPIC_BARCODE, buf, n) == 0)
 				bc_seen = c1;
+		}
+	}
+
+	/* a new obstacle profile: publish it once (seqlock copy, same as the barcode above) */
+	unsigned q1 = s5_profile_seq;
+	if (q1 != ob_seen && !(q1 & 1u)) {
+		obstacle_profile_t pr;
+		__asm__ volatile ("dmb" ::: "memory");
+		const volatile unsigned char *src = (const volatile unsigned char *)&s5_profile;
+		unsigned char *dst = (unsigned char *)&pr;
+		for (unsigned i = 0; i < sizeof pr; i++) dst[i] = src[i];
+		__asm__ volatile ("dmb" ::: "memory");
+		if (s5_profile_seq == q1) {			/* not rewritten while we copied */
+			int n = tm_format_obstacle(buf, sizeof buf, &pr, q1 / 2u);
+			if (n > 0 && publish(ctx, S1_TOPIC_OBSTACLE, buf, n) == 0)
+				ob_seen = q1;			/* else try again on the next call */
 		}
 	}
 

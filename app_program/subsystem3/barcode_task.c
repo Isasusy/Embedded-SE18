@@ -15,13 +15,14 @@ static const char *nav_name(int nav)
 	return (nav >= 0 && nav <= 4) ? nm[nav] : "no command";
 }
 
-/* The last read, valid or not, for the telemetry (S1, which runs on the other core). s3_barcode_count is
-   bumped AFTER the other fields are written, so a reader that sees the same count before and after copying
-   has a consistent copy. */
+/* The last read, valid or not, for the telemetry (S1, which runs on the other core). Seqlock: s3_barcode_seq is odd
+   while the fields are being written, so a reader that sees the same even value before and after copying has a
+   consistent copy. s3_barcode_count is the number of reads so far. */
 volatile char s3_last_barcode[8];		/* "" when the read did not decode */
 volatile char s3_last_pattern[BAR_MAX_ELEMENTS + 12];
 volatile int s3_last_nav;			/* nav_cmd_type_t or -1 */
 volatile unsigned s3_barcode_count;
+volatile unsigned s3_barcode_seq;
 
 /* for line_task: is the barcode sensor in the middle of a code (then a "junction" is really the bars)? */
 volatile bool s3_bar_active;
@@ -29,11 +30,14 @@ volatile bool s3_bar_finish_req;		/* set by line_task at a junction: end the ope
 
 static void keep(const bd_read_t *rd, bool ok)
 {
+	s3_barcode_seq++;
+	__asm__ volatile ("dmb" ::: "memory");
 	for (int i = 0; i < 8; i++) s3_last_barcode[i] = ok ? rd->text[i] : 0;
 	for (unsigned i = 0; i < sizeof rd->pattern; i++) s3_last_pattern[i] = rd->pattern[i];
 	s3_last_nav = ok ? rd->nav : -1;
-	__asm__ volatile ("dmb" ::: "memory");
 	s3_barcode_count++;
+	__asm__ volatile ("dmb" ::: "memory");
+	s3_barcode_seq++;
 }
 
 void barcode_task(INT stacd, void *exinf)

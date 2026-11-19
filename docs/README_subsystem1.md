@@ -11,6 +11,7 @@ Topics (laptop broker, monitor with MQTT Explorer):
 | robot/se18/barcode | robot -> laptop | every barcode read: {"code":"A","cmd":"LEFT","n":3,"pattern":"...","t":...} |
 | robot/se18/status | robot -> laptop | state, speed, max hump, fault, every 0.5 s and on every state change |
 | robot/se18/heartbeat | robot -> laptop | every 1 s |
+| robot/se18/obstacle | robot -> laptop | every obstacle profile (servo 30..150 deg in 5 deg steps, 25 rays): {"n":1,"deg":[30,35,...,150],"mm":[...],"found":true,"dist_mm":...,"width_mm":...,"left_clear_mm":...,"right_clear_mm":...,"side":"LEFT","t":...} |
 | robot/se18/cmd | laptop -> robot | start / stop / reset |
 
 Build: `make WIFI=cyw43 NET=lwip MQTT=1 -j8` with `config/wifi_secrets.h` filled in (SSID, password, broker IP = the
