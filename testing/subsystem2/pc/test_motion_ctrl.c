@@ -217,6 +217,35 @@ int main(void)
 	send(&s, MOTION_CMD_TURN, 0, 0, 0);
 	CHECK(s.out.status.cmd_done && s.out.state == MC_ST_STOPPED, "TURN 0 done immediately");
 
+	/* 15. tyre scrub (obstacle avoidance turned too little, 23 Nov): on the spot the car turns as if its track were 25%
+	   wider than MC_TRACK_MM. Uncalibrated, a 48 deg avoidance turn falls well short. The dashboard's spin test (TURN 360,
+	   new track = old x 360 / real degrees) fixes it. */
+	{
+		const float scrub = MC_TRACK_MM * 1.25f;
+		sim_init(&s); s.track_true = scrub;
+		send(&s, MOTION_CMD_TURN, 0, 48, 0);
+		run_until_done(&s, 5000); run(&s, 300, false, 0);
+		CHECK(s.heading_true < 42.0f, "uncalibrated: TURN 48 really turns only %.1f deg", s.heading_true);
+
+		sim_init(&s); s.track_true = scrub;
+		send(&s, MOTION_CMD_TURN, 0, 360, 0);
+		run_until_done(&s, MC_CMD_TIMEOUT_MS); run(&s, 300, false, 0);
+		float real = s.heading_true;
+		CHECK(s.out.state != MC_ST_FAULT_STOP && real > 250.0f && real < 330.0f,
+		      "spin test: TURN 360 really turns %.1f deg (no timeout)", real);
+		float cal = MC_TRACK_MM * 360.0f / real;
+		CHECK(mc_set_track(cal) && fabsf(mc_track_mm - cal) < 0.01f, "calibrated track %.1f mm (true %.1f)", cal, scrub);
+
+		sim_init(&s); s.track_true = scrub;
+		send(&s, MOTION_CMD_TURN, 0, 48, 0);
+		run_until_done(&s, 5000); run(&s, 300, false, 0);
+		CHECK(fabsf(s.heading_true - 48.0f) < 4.0f, "calibrated: TURN 48 really turns %.1f deg", s.heading_true);
+
+		CHECK(!mc_set_track(10.0f) && !mc_set_track(1000.0f) && !mc_set_track(0.0f / 0.0f) && fabsf(mc_track_mm - cal) < 0.01f,
+		      "out-of-range / NaN track refused");
+		mc_set_track(MC_TRACK_MM);
+	}
+
 	printf("%d checks, %d failed\n", checks, fails);
 	printf(fails ? "SOME FAILED\n" : "ALL PASSED\n");
 	return fails != 0;

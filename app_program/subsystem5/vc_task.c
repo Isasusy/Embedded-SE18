@@ -9,6 +9,7 @@
 #include "../subsystem2/subsystem2.h"
 #include "../subsystem3/subsystem3.h"
 #include "../subsystem4/subsystem4.h"
+#include "../subsystem1/subsystem1.h"	/* s1_online_count: MQTT link up (INIT waits for it) */
 #include "vc_logic.h"
 #include "vc_config.h"
 #include "drv_scan.h"
@@ -53,6 +54,10 @@ void vc_task(INT stacd, void *exinf)
 	float av_h0 = 0.0f, av_d0 = 0.0f;	/* heading at the start of the avoidance, odometer at the last step */
 #endif
 	bool scan_run = false, scan_hold = false;
+	unsigned net_cnt = 0;			/* last s1_online_count seen, and when it last moved */
+	uint32_t net_seen_ms = 0;
+	uint32_t prev_wait = VC_WAIT_MOTION | VC_WAIT_LINE | VC_WAIT_IMU;	/* last tick's VC_WAIT_* bits, for the button message */
+	(void)prev_wait;
 #if VC_AUTOSTART_MS && !VC_START_BUTTON
 	bool autostarted = false;
 #endif
@@ -69,6 +74,11 @@ void vc_task(INT stacd, void *exinf)
 
 	vc_init(&v);
 #if VC_WATCHDOG_ENABLE
+	{	/* why did we (re)start? A watchdog reboot means some task was silent for VC_WATCHDOG_MS */
+		unsigned why = s5_wdt_reason();
+		S5_PRINTF("[S5] restart reason: %s\n", (why & 1u) ? "WATCHDOG TIMEOUT (a task was silent too long)" :
+			  (why & 2u) ? "watchdog forced" : "power-on / reset button / new firmware");
+	}
 	s5_wdt_enable(VC_WATCHDOG_MS);	/* NFR10: Pico resets (motor pins fall low) if we stop feeding it */
 #endif
 	s_next_us = S5_US32();
@@ -88,7 +98,11 @@ void vc_task(INT stacd, void *exinf)
 				btn_held = true;
 			} else if (btn_held && btn_ticks == 0) {
 				btn_held = false;
-				if (v.state == VC_IDLE || v.state == VC_INIT) {
+				if (v.state == VC_INIT) {
+					S5_PRINTF("[S5] button: still initialising (waiting for%s%s%s%s) - press again once IDLE\n",
+						  (prev_wait & VC_WAIT_MOTION) ? " motors" : "", (prev_wait & VC_WAIT_LINE) ? " line" : "",
+						  (prev_wait & VC_WAIT_IMU) ? " IMU" : "", (prev_wait & VC_WAIT_NET) ? " WiFi/MQTT" : "");
+				} else if (v.state == VC_IDLE) {
 					start_pending = true;
 					start_at = in.now_ms + VC_BUTTON_DELAY_MS;
 					S5_PRINTF("[S5] button: starting in %d ms\n", VC_BUTTON_DELAY_MS);
@@ -129,14 +143,35 @@ void vc_task(INT stacd, void *exinf)
 		in.obstacle_mm    = s5_track_mm;
 		in.motion_fault   = flag(flg_motion, FLG_MOTION_FAULT, true);
 
-		in.all_ready = flag(flg_motion, FLG_MOTION_READY, false) &&
-			       (!VC_REQUIRE_IMU || flag(flg_imu, FLG_IMU_READY, false)) &&
-			       flag(flg_line, FLG_LINE_READY, false);
+		{
+			const bool r2 = flag(flg_motion, FLG_MOTION_READY, false);
+			const bool r3 = flag(flg_line, FLG_LINE_READY, false);
+			const bool r4 = !VC_REQUIRE_IMU || flag(flg_imu, FLG_IMU_READY, false);
+			in.all_ready = r2 && r3 && r4;
+			in.waiting = (r2 ? 0u : VC_WAIT_MOTION) | (r3 ? 0u : VC_WAIT_LINE) | (r4 ? 0u : VC_WAIT_IMU);
+
+			/* MQTT link: S1's counter moves at least every 100 ms while connected */
+			unsigned c = s1_online_count;
+			if (c != net_cnt) { net_cnt = c; net_seen_ms = in.now_ms; }
+			in.net_ready = c != 0 && (uint32_t)(in.now_ms - net_seen_ms) < 1000u;
+			prev_wait = in.waiting | ((VC_WAIT_FOR_NET && !in.net_ready) ? VC_WAIT_NET : 0u);
+		}
 		/* NFR10: each of the three must have set ALIVE since the last tick (consumed here) */
 		bool a2 = flag(flg_motion, FLG_MOTION_ALIVE, true);
 		bool a3 = flag(flg_line, FLG_LINE_ALIVE, true);
 		bool a4 = flag(flg_imu, FLG_IMU_ALIVE, true) || !VC_REQUIRE_IMU;
 		in.all_alive = a2 && a3 && a4;
+		{	/* diagnosis: which subsystem went silent (> VC_ALIVE_MS), printed once per silence */
+			static int miss2, miss3, miss4;
+			miss2 = a2 ? 0 : miss2 + 1; miss3 = a3 ? 0 : miss3 + 1; miss4 = a4 ? 0 : miss4 + 1;
+			const int lim = VC_ALIVE_MS / VC_TICK_MS + 1;
+			if (miss2 == lim || miss3 == lim || miss4 == lim)
+				S5_PRINTF("[S5] ALIVE missing > %d ms:%s%s%s (state %s)\n", VC_ALIVE_MS,
+					  miss2 >= lim ? " motion(S2)" : "", miss3 >= lim ? " line(S3)" : "",
+					  miss4 >= lim ? " IMU(S4)" : "", vc_state_name(v.state));
+		}
+		in.tilted = flag(flg_imu, FLG_IMU_TILTED, false);	/* the TILT event itself is handled in vc_step */
+		in.lifted = flag(flg_line, FLG_LINE_LIFTED, false);
 
 		if (mtx_motion > 0 && tk_loc_mtx(mtx_motion, TMO_POL) == E_OK) {
 			motion_status_t ms = app_motion;

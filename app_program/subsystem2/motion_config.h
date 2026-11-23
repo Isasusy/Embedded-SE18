@@ -13,6 +13,11 @@
  * Calibrate: set S2_DEBUG_PRINT 1, turn one wheel exactly one revolution by hand, read "tick" in the status line. */
 #define MC_WHEEL_DIAM_MM	65.0f
 #define MC_TRACK_MM		115.0f		/* distance between the two wheels' contact points (CALIBRATE) */
+/* Turns are judged by the encoders only: with tyre scrub the car turns LESS than commanded until MC_TRACK_MM is the
+   EFFECTIVE track. Calibrate on the dashboard (Turn calibration: spin 360, enter what it really turned), then copy
+   the value it shows here so it survives a reboot. Run-time limits for "cal track=": */
+#define MC_TRACK_MIN_MM		80.0f
+#define MC_TRACK_MAX_MM		300.0f
 #define MC_TICKS_PER_REV	860.0f		/* measured by hand: ~830-890 per revolution (verify with a 1 m push test) */
 
 /* ---- speeds (mm/s) ---- */

@@ -84,6 +84,23 @@ void line_task(INT stacd, void *exinf)
 		}
 		tk_set_flg(flg_line, FLG_LINE_ALIVE);
 
+#if LINE_LIFTED_MS > 0
+		{	/* picked up: both sensors see no floor for LINE_LIFTED_MS (same time on the floor to clear) */
+			static int lift_ms;
+			static bool lifted;
+			bool now_up = l > LINE_LIFTED_ADC && r > LINE_LIFTED_ADC;
+			lift_ms = (now_up != lifted) ? lift_ms + LINE_PERIOD_MS : 0;
+			if (lift_ms >= LINE_LIFTED_MS) {
+				lift_ms = 0;
+				lifted = now_up;
+				if (lifted) tk_set_flg(flg_line, FLG_LINE_LIFTED);
+				else        tk_clr_flg(flg_line, ~(UINT)FLG_LINE_LIFTED);
+				S3_PRINTF("[S3] %s (adc %d/%d)\n", lifted ? "car LIFTED: no floor under the line sensors"
+									  : "car back on the floor", l, r);
+			}
+		}
+#endif
+
 #if S3_DEBUG_PRINT
 		if (++n % (500 / LINE_PERIOD_MS) == 0) {
 			char last[8];

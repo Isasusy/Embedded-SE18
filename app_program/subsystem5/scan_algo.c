@@ -40,18 +40,22 @@ static float side_clear(const int *ang, const int *dist, int n, int start, int d
 }
 
 /* The avoidance route, from the axle (turning centre) where the car stopped. y = forward, x = sideways toward the
-   chosen side. Clearance comes only from the planned obstacle: SCAN_PLAN_WIDTH_PCT of the SCANNED width (the full
-   extent of the rays that echoed), centred on it, as deep as it is wide, front face where it was measured.
+   chosen side. Clearance comes from the planned obstacle: SCAN_PLAN_WIDTH_PCT of the BEAM-CORRECTED width (edges
+   pulled in by SCAN_BEAM_HALF_DEG), centred on it, as deep as it is wide, front face where it was measured.
    Its near corner on that side is at (ep, Y), Y = distance + VC_SENSOR_AHEAD_MM, its back face at Y + depth. The car
    is h = VC_ROBOT_HALF_W_MM either side of its path, and spinning on the spot it sweeps a circle of radius R through
    its farthest corner (front or rear overhang, and h).
    1. Turn by t: the heading must aim OUTSIDE the planned obstacle as the sensor saw it: the car's centre line passes
       ep + h sideways at the obstacle's distance d, so t >= atan((ep + h) / d). The car's side must also pass the planned
       corner from the axle (Y*tan(t) - ep >= h / cos(t)). Whole degrees, rounded up, at most VC_AVOID_MAX_DEG.
-   2. Drive the angled leg until the car is PAST the obstacle: the axle ends R beyond the planned back face
-      (y_end = Y + depth + R), so the whole car has passed it and can spin back without touching it.
-   3. Turn back by -t: parallel to the original path, beyond the obstacle. No further drive-on is needed (pass_mm 0).
-   4. Line finding: turn -t toward the line and creep until a sensor finds it. */
+   2. Drive the angled leg only until the car is BESIDE the obstacle: its centre line L = ep + h + SCAN_SIDE_MARGIN_MM
+      to the side (diag = L / sin t, which takes the axle f = L / tan t forward).
+   3. Turn back by -t: parallel to the original path, its side SCAN_SIDE_MARGIN_MM clear of the planned obstacle.
+   4. Drive on (pass_mm) until the axle is R beyond the planned back face (y = Y + depth + R): the whole car has passed
+      it and can spin toward the line without touching it.
+   5. Line finding: turn -t toward the line and creep until a sensor finds it.
+   (Until 23 Nov step 2 went all the way past the back face on the diagonal and there was no step 4: at the steep
+   angles a close obstacle needs, that leg went over 2 m sideways, so no real obstacle ever had room for it.) */
 typedef struct { int32_t turn_deg, diag_mm, lat_mm, pass_mm; float need_mm; } plan_t;
 
 /* turning circle of the car about its axle: its farthest corner */
@@ -69,11 +73,11 @@ static float scan_edge(const obstacle_t *o, int side)
 	return side > 0 ? o->scan_left_mm : -o->scan_right_mm;
 }
 
-/* planned (enlarged) edge on that side: SCAN_PLAN_WIDTH_PCT of the SCANNED width, centred on the scanned obstacle */
+/* planned (enlarged) edge on that side: SCAN_PLAN_WIDTH_PCT of the beam-corrected width, centred on that obstacle */
 static float plan_edge(const obstacle_t *o, int side)
 {
-	float centre = 0.5f * (o->scan_left_mm + o->scan_right_mm);
-	float half = 0.5f * (o->scan_left_mm - o->scan_right_mm) * (float)SCAN_PLAN_WIDTH_PCT / 100.0f;
+	float centre = 0.5f * (o->left_edge_mm + o->right_edge_mm);
+	float half = 0.5f * (o->left_edge_mm - o->right_edge_mm) * (float)SCAN_PLAN_WIDTH_PCT / 100.0f;
 	return side > 0 ? centre + half : -(centre - half);
 }
 
@@ -107,14 +111,15 @@ static plan_t scan_plan(const obstacle_t *o, int side)
 	while (deg < VC_AVOID_MAX_DEG && !corner_clear(Y, edge, deg)) deg++;
 	bool fits = aim <= VC_AVOID_MAX_DEG && corner_clear(Y, edge, deg);	/* else too wide even at the steepest */
 	float tr = (float)deg * DEG2RAD;
-	float y_end = Y + o->depth_mm + R;			/* the whole car past the back face, room to spin */
-	float x = y_end * mm_tanf(tr);
+	float L = edge + h + (float)SCAN_SIDE_MARGIN_MM;	/* centre line beside the obstacle, side clear by the margin */
+	float f = L / mm_tanf(tr);				/* forward progress of the angled leg */
+	float y_back = Y + o->depth_mm + R;			/* the whole car past the back face, room to spin */
 
 	p.turn_deg = side * deg;
-	p.diag_mm = (int32_t)(y_end / mm_cosf(tr) + 0.5f);
-	p.lat_mm = (int32_t)(x + 0.5f);
-	p.pass_mm = 0;
-	p.need_mm = fits ? x + R - real : 1e9f;	/* free space from the scanned edge to where the far corner swings */
+	p.diag_mm = (int32_t)(L / mm_sinf(tr) + 0.5f);
+	p.lat_mm = (int32_t)(L + 0.5f);
+	p.pass_mm = y_back > f ? (int32_t)(y_back - f + 0.5f) : 0;
+	p.need_mm = fits ? L + R - real : 1e9f;	/* free space from the scanned edge to where the far corner swings */
 	return p;
 }
 
@@ -175,11 +180,11 @@ void scan_analyze_from(const int *ang, const int *dist, int n, int seed_deg, obs
 	o->left_edge_mm = d * mm_tanf(degL * DEG2RAD);
 	o->right_edge_mm = d * mm_tanf(degR * DEG2RAD);
 	o->width_mm = o->left_edge_mm - o->right_edge_mm;
-	/* scanned edges: the full extent of the rays that echoed. The route uses these, not the beam-corrected ones, so a
-	   sensor whose beam is narrower than SCAN_BEAM_HALF_DEG cannot make the car turn too little */
+	/* scanned edges: the full extent of the rays that echoed. The free space beside the obstacle is measured from these;
+	   the route is planned on the beam-corrected edges enlarged by SCAN_PLAN_WIDTH_PCT (plan_edge) */
 	o->scan_left_mm = d * mm_tanf(((float)ang[lft] + 0.5f * step) * DEG2RAD);
 	o->scan_right_mm = d * mm_tanf(((float)ang[rgt] - 0.5f * step) * DEG2RAD);
-	float wp = (o->scan_left_mm - o->scan_right_mm) * (float)SCAN_PLAN_WIDTH_PCT / 100.0f;	/* planned width = depth */
+	float wp = o->width_mm * (float)SCAN_PLAN_WIDTH_PCT / 100.0f;	/* planned width = assumed depth */
 	o->depth_mm = wp < SCAN_DEPTH_MIN_MM ? SCAN_DEPTH_MIN_MM : (wp > SCAN_DEPTH_MAX_MM ? SCAN_DEPTH_MAX_MM : wp);
 
 	float reach = d + o->depth_mm;			/* the strip beside the obstacle runs to its planned back face */

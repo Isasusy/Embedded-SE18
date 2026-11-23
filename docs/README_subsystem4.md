@@ -79,6 +79,26 @@ Bench test (robot on the table, USB console open). Wiring: VCC to 3V3, GND to GN
 * **Stack size**: `app_start_task()` did not show a stack size, so I could not set one. `imu_task` uses a few hundred bytes of
   locals; if the template's default is very small, raise it.
 
+## The robot's IMU is an LSM303, not an MPU-6050 (found 23 Nov)
+
+* The bus scan on the robot shows devices at 0x19 and 0x1E: an ST LSM303 (accelerometer 0x19, WHO_AM_I 0x33 = LSM303AGR,
+  compass 0x1E, unused). There was no chip at 0x68/0x69, which is why the IMU always reported SENSOR_FAULT.
+* `drv_imu.c` now probes the MPU-6050 first, then the LSM303 / LIS3DH accelerometer (0x19 / 0x18): +-8 g, 100 Hz.
+  Console: `[IMU] found LSM303/LIS3DH accelerometer at address 25 (WHO_AM_I = 51)`.
+* **It has no gyroscope.** Pitch comes from the accelerometer alone (`IMU_ACC_ONLY_ALPHA`), turn rate is always 0 and
+  TURNING is never reported. Tilt stop, impact, climb/descend and hump height still work (PC test [11]).
+
+## Tilt / tip-over stop (added 23 Nov)
+
+* The IMU measures how far the car leans from "level" in any direction: nose up/down, sideways, upside down. "Level" is the
+  gravity direction saved during calibration, so a board mounted at a slight angle still reads 0 on the floor.
+* If the car leans more than `IMU_TILT_STOP_DEG` (35 deg) for `IMU_TILT_HOLD_MS` (150 ms), the IMU sends one `IMU_EVT_TILT`
+  (`pitch_deg` = the tilt angle) and sets `FLG_IMU_TILTED`. The flag stays set until the car is back below `IMU_TILT_CLEAR_DEG` (15 deg).
+  The Vehicle Controller stops the car with `FAULT_TILT` and will not start it while the flag is set.
+* Console: `>> TILT    62.3 deg from level (tipped over / picked up)`, then `[IMU] level again (...)`.
+* Keep `IMU_TILT_STOP_DEG` well above the steepest hump on the course. `IMU_TILT_STOP_DEG 0` turns it off.
+* Only works while the IMU itself is working (wired, powered, calibrated).
+
 ## Not verified
 
 * The IMU logic passes its 42 PC checks (hump height, running max, impact, calibration, turning).

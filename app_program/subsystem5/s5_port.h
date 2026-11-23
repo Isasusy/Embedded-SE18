@@ -19,6 +19,9 @@ static inline uint32_t s5_now_ms(void) { SYSTIM t; tk_get_otm(&t); return (uint3
 #define S5_WDT_REG(off)		(*(volatile unsigned int *)(0x40058000u + (off)))
 #define S5_PSM_WDSEL		(*(volatile unsigned int *)0x40010008u)	/* PSM.WDSEL: what a watchdog timeout resets */
 static inline void s5_wdt_feed(unsigned ms) { S5_WDT_REG(0x04) = ms * 2000u; }		/* LOAD */
+/* WATCHDOG.REASON: why the chip last restarted. bit 0 = watchdog timed out, bit 1 = forced; 0 = power-on / reset pin.
+   Cleared by any other kind of reset, so it is valid from boot until the next restart. */
+static inline unsigned s5_wdt_reason(void) { return S5_WDT_REG(0x08) & 0x3u; }
 static inline void s5_wdt_enable(unsigned ms)
 {
 	S5_WDT_REG(0x00) &= ~(1u << 30);		/* CTRL.ENABLE off while configuring */

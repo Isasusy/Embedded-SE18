@@ -1,6 +1,7 @@
 /*
  *	scan_algo.h / scan_algo.c -- Obstacle Scan logic: turns one servo sweep into obstacle_t
- *	(width, edges, assumed depth = width, free space each side, chosen side, planned bypass). No hardware: testable on a PC.
+ *	(width, edges, assumed depth = planned width, free space each side, chosen side, planned bypass: turn, angled leg to
+ *	beside the obstacle, turn back, drive past it, turn toward the line). No hardware: testable on a PC.
  */
 #ifndef SCAN_ALGO_H
 #define SCAN_ALGO_H

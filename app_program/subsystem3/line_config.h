@@ -77,8 +77,14 @@
    black is always a junction (or the car lifted, below). A junction that arrives while a barcode read is still open
    ends that read at once, so its command is known before the car acts on the junction. */
 #define LINE_LIFTED_ADC		3200		/* both line sensors above this (no floor under them) = car lifted, not a junction */
+#ifndef LINE_LIFTED_MS
+#define LINE_LIFTED_MS		200		/* ... for this long = FLG_LINE_LIFTED set (VC stops the car); the same time back on
+						   the floor clears it. Must be longer than the car takes to cross a junction's black
+						   tape, in case black ever reads above LINE_LIFTED_ADC. 0 = lift detection off */
+#endif
 #define S3_BARCODE_TRACE	1		/* 1 = print every stripe the barcode sensor sees (colour and ms); 0 later */
 
+/* Start-up defaults only: the dashboard can change any letter's direction over MQTT (barcode_algo.h, bd_map_*) */
 #define BAR_CHAR_LEFT		'A'
 #define BAR_CHAR_RIGHT		'B'
 #define BAR_CHAR_STRAIGHT	'C'

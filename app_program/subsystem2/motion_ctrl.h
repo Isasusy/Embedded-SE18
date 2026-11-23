@@ -63,6 +63,13 @@ typedef struct {
 	float		tgt_l, tgt_r;		/* wheel speed targets, for the debug line                    */
 } mc_out_t;
 
+/* Effective track (wheel spacing) used to turn wheel distances into heading. Starts as MC_TRACK_MM. A car spinning on
+   the spot scrubs its tyres, so it turns LESS than the encoders say unless this is larger than the measured spacing.
+   Calibrate with the dashboard's spin test (a TURN of 360): new = old x 360 / degrees really turned.
+   Set over MQTT ("cal track=138", S1 calls mc_set_track); not kept across a reboot: put the result in MC_TRACK_MM. */
+extern volatile float	mc_track_mm;
+bool		mc_set_track(float mm);		/* false (unchanged) outside MC_TRACK_MIN_MM..MC_TRACK_MAX_MM */
+
 void		mc_init(mc_t *m);
 void		mc_step(mc_t *m, const mc_in_t *in, mc_out_t *out);
 const char *	mc_state_name(mc_state_t s);

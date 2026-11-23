@@ -34,6 +34,7 @@ typedef struct {
 	uint32_t	t_still;			/* OBSTACLE_AVOID: start of the current steady-distance stretch */
 	int		still_min, still_max;		/* tracked distance band of that stretch (0 = none yet) */
 	bool		started, sp_line_found;
+	uint32_t	t_ready;			/* INIT: when all subsystems were first READY (0 = not yet) */
 	bool		bench_restart;			/* bench: drive on again after an automatic reset */
 	bool		nav_has;			/* a barcode command is waiting for the next junction */
 	int		nav_cmd;			/* nav_cmd_type_t of that command */
@@ -55,7 +56,11 @@ typedef struct {
 	int	obstacle_mm;				/* distance the scan task is tracking, <= 0 = not tracking */
 	bool	obstacle_present;			/* scan task: the obstacle it tracks is still there (SCAN_HOLD_MM) */
 	bool	all_ready;				/* S2, S3, S4 reported READY */
+	uint32_t waiting;				/* VC_WAIT_MOTION / LINE / IMU bits of those not READY yet */
+	bool	net_ready;				/* MQTT connected (S1's s1_online_count moving) */
 	bool	all_alive;				/* S2, S3, S4 each set ALIVE since the last tick */
+	bool	tilted;					/* S4: tipped over / held tilted (FLG_IMU_TILTED); an IMU_EVT_TILT in imu counts too */
+	bool	lifted;					/* S3: no floor under the line sensors (FLG_LINE_LIFTED) */
 	int	speed_mm_s;				/* measured speed, for the status report */
 } vc_in_t;
 

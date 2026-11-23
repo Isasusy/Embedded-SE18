@@ -17,6 +17,12 @@
  * Configured in drv_imu.c: accel +-8 g, gyro +-500 dps, DLPF ~94 Hz (MPU6050/6500 family). */
 #define IMU_ACCEL_LSB_PER_G      4096.0f
 #define IMU_GYRO_LSB_PER_DPS     65.5f
+/* LSM303 / LIS3DH (drv_imu.c: +-8 g so a 3.5 g shock is not clipped, high resolution, 16-bit left-justified):
+   1 g = 32768 / 8 counts */
+#define IMU_LSM_ACCEL_LSB_PER_G  4096.0f
+/* Without a gyroscope pitch comes from the accelerometer alone, low-passed with this weight on the old value per 10 ms
+   (0.85 -> ~60 ms time constant). IMU_COMP_ALPHA (0.98) is for chips with a gyro. */
+#define IMU_ACC_ONLY_ALPHA       0.85f
 
 /* ------------------------------------------------------------------ mounting orientation
  * Robot frame: X = forward, Y = left, Z = up.
@@ -63,10 +69,30 @@
 #define IMU_CLASS_DEBOUNCE       3         /* samples a new class must persist (30 ms)       */
 #define IMU_PERIODIC_REPORT_MS   500       /* periodic MOTION_CLASS status event, 0 = off    */
 
-#define IMU_SHOCK_G              2.0f      /* accel magnitude above this = collision         */
+/* accel magnitude above this = collision. Was 2.0: on the robot (23 Nov) normal driving - motors starting, hard
+   steering corrections, wheels bumping - gave 2.0-2.6 g and faulted the car seven times in 2.5 minutes. */
+#ifndef IMU_SHOCK_G
+#define IMU_SHOCK_G              3.5f
+#endif
+/* 0 = no IMPACT detection at all (team decision, 23 Nov). On the robot the hump's front edge gives ~3.9 g; an IMPACT
+   cancels the hump being measured and pauses the motion classes, so it wiped out hump measurements. 1 = detect. */
+#ifndef IMU_IMPACT_DETECT
+#define IMU_IMPACT_DETECT        0
+#endif
 #define IMU_SHOCK_ARM_MS         500       /* ignore shocks this long after start-up         */
 #define IMU_IMPACT_MIN_HOLD_MS   200       /* stay in SUDDEN_IMPACT at least this long (one event per hit) */
 #define IMU_IMPACT_HOLD_MS       1500      /* leave SUDDEN_IMPACT after this even if moving  */
+
+/* Tilt / tip-over / picked-up stop: TILT event when the car leans more than IMU_TILT_STOP_DEG (any direction, measured
+ * from "level" as calibrated) for IMU_TILT_HOLD_MS. Keep IMU_TILT_STOP_DEG well above the steepest hump on the course.
+ * The angle comes from the accelerometer (low-passed), so it also works when the car is lifted and turned by hand.
+ * After a TILT the car must be put back level (below IMU_TILT_CLEAR_DEG) before another TILT can be sent. */
+#ifndef IMU_TILT_STOP_DEG
+#define IMU_TILT_STOP_DEG        35.0f     /* 0 = tilt detection off                         */
+#endif
+#define IMU_TILT_CLEAR_DEG       15.0f
+#define IMU_TILT_HOLD_MS         150
+#define IMU_TILT_LPF             0.15f     /* low-pass gain for the gravity vector (per 10 ms) */
 
 #define IMU_HUMP_START_DEG       6.0f      /* pitch above this begins a climb                */
 #define IMU_HUMP_TOP_DEG         3.0f      /* pitch back below this = top reached            */

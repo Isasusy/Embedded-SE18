@@ -38,6 +38,8 @@ IMPORT ID	mbf_imu_evt;
 #define FLG_IMU_RESET		0x0001
 #define FLG_IMU_READY		0x0002
 #define FLG_IMU_ALIVE		0x0004
+#define FLG_IMU_TILTED		0x0008	/* ADDED: set while the car is tipped / held tilted (IMU_TILT_STOP_DEG),
+					   cleared when level again (IMU_TILT_CLEAR_DEG). VC reads it, never clears it. */
 IMPORT ID	flg_imu;
 
 /* ------------------------------------------------------------------------------------------
@@ -67,6 +69,21 @@ typedef struct {		/* snapshot for the bench status line and the tests */
 } IMU_DEBUG;
 
 IMPORT IMU_DEBUG	s4_imu_debug;
+
+/* ------------------------------------------------------------------------------------------
+ * ADDED  S4 -> S1 (telemetry) : the last finished hump, for MQTT topic robot/se18/hump.
+ *        Seqlock like s5_profile: imu_task makes s4_hump_seq odd, writes, makes it even again.
+ *        S1 copies the record and uses it only if the counter was even and unchanged; s4_hump_seq / 2 = humps since boot.
+ *        Each hump is sent once the moment it is measured, so a later mission RESET (which clears the running
+ *        maximum in the status message) cannot hide it.
+ * ------------------------------------------------------------------------------------------ */
+typedef struct {
+	float		peak_mm;	/* this hump */
+	float		max_hump_mm;	/* running maximum since the last mission reset */
+	uint32_t	t_ms;
+} s4_hump_t;
+IMPORT volatile s4_hump_t	s4_last_hump;
+IMPORT volatile unsigned	s4_hump_seq;
 IMPORT void		imu_task(INT stacd, void *exinf);
 
 #endif /* SUBSYSTEM4_H */

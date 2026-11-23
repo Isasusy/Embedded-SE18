@@ -13,6 +13,16 @@
 #define MM_PER_TICK	(PI_F * MC_WHEEL_DIAM_MM / MC_TICKS_PER_REV)
 #define DT		((float)MC_PERIOD_MS / 1000.0f)
 
+/* effective track used for the heading (see motion_ctrl.h). One aligned float: written whole by S1, read by motion_task. */
+volatile float mc_track_mm = MC_TRACK_MM;
+
+bool mc_set_track(float mm)
+{
+	if (!(mm >= MC_TRACK_MIN_MM && mm <= MC_TRACK_MAX_MM)) return false;	/* also rejects NaN */
+	mc_track_mm = mm;
+	return true;
+}
+
 static float clampf(float x, float lo, float hi)
 {
 	return x < lo ? lo : (x > hi ? hi : x);
@@ -146,7 +156,7 @@ void mc_step(mc_t *m, const mc_in_t *in, mc_out_t *out)
 	m->dl_mm += dl;
 	m->dr_mm += dr;
 	m->dist_mm = 0.5f * (m->dl_mm + m->dr_mm);
-	m->heading += (dr - dl) / MC_TRACK_MM * RAD2DEG;	/* right wheel further = turned left */
+	m->heading += (dr - dl) / mc_track_mm * RAD2DEG;	/* right wheel further = turned left */
 	m->v_l += MC_V_FILTER * (dl / DT - m->v_l);
 	m->v_r += MC_V_FILTER * (dr / DT - m->v_r);
 

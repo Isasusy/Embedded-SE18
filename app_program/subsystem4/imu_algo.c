@@ -34,6 +34,7 @@ imu_cal_status_t imu_cal_finish(const imu_cal_t *c, imu_cal_result_t *r)
     float ma[3], worst_std = 0.0f;
     for (int i = 0; i < 3; i++) {
         ma[i] = c->sum_a[i] / n;
+        r->accel_mean_g[i] = ma[i];
         const float mg  = c->sum_g[i] / n;
         float var = c->sumsq_g[i] / n - mg * mg;
         if (var < 0.0f) var = 0.0f;
@@ -115,11 +116,55 @@ void imu_algo_init(imu_algo_t *s, float pitch_offset_deg, uint32_t now_ms)
     s->cand             = MOTION_CLASS_STATIONARY;
     s->start_ms         = now_ms;
     s->last_report_ms   = now_ms;
+    s->level_g[2]       = 1.0f;     /* default "level": robot +Z up */
     hump_clear(s);
+}
+
+void imu_algo_set_no_gyro(imu_algo_t *s) { s->no_gyro = true; }
+
+void imu_algo_set_level(imu_algo_t *s, const float a[3])
+{
+    const float m = mm_sqrtf(a[0] * a[0] + a[1] * a[1] + a[2] * a[2]);
+    if (m < 0.5f) return;           /* nonsense calibration: keep the default */
+    for (int i = 0; i < 3; i++) s->level_g[i] = a[i] / m;
+}
+
+/* Tilt / tip-over: angle between the low-passed gravity direction and "level". One TILT event when it stays above
+   IMU_TILT_STOP_DEG for IMU_TILT_HOLD_MS; re-armed only once the car is back below IMU_TILT_CLEAR_DEG. */
+static void tilt_check(imu_algo_t *s, const imu_algo_in_t *in, imu_algo_out_t *out)
+{
+    const float a[3] = { in->ax_g, in->ay_g, in->az_g };
+    if (!s->grav_init) {
+        for (int i = 0; i < 3; i++) s->grav_lpf[i] = a[i];
+        s->grav_init = true;
+    } else {
+        for (int i = 0; i < 3; i++) s->grav_lpf[i] += IMU_TILT_LPF * (a[i] - s->grav_lpf[i]);
+    }
+    const float *g = s->grav_lpf, *r = s->level_g;
+    const float dot = g[0] * r[0] + g[1] * r[1] + g[2] * r[2];
+    const float cx  = g[1] * r[2] - g[2] * r[1];
+    const float cy  = g[2] * r[0] - g[0] * r[2];
+    const float cz  = g[0] * r[1] - g[1] * r[0];
+    s->tilt_deg = mm_atan2f(mm_sqrtf(cx * cx + cy * cy + cz * cz), dot) * RAD2DEG;
+
+    if (!(IMU_TILT_STOP_DEG > 0.0f)) return;            /* tilt detection switched off */
+    if (s->tilted) {
+        if (s->tilt_deg < IMU_TILT_CLEAR_DEG) s->tilted = false;
+        return;
+    }
+    if (s->tilt_deg <= IMU_TILT_STOP_DEG) { s->tilt_counting = false; return; }
+    if (!s->tilt_counting) { s->tilt_counting = true; s->tilt_since_ms = in->now_ms; }
+    if ((in->now_ms - s->tilt_since_ms) >= IMU_TILT_HOLD_MS && out->n < IMU_ALGO_MAX_EVTS) {
+        s->tilted        = true;
+        s->tilt_counting = false;
+        emit(out, s, IMU_EVT_TILT, 0.0f, s->accel_mag_g, in->now_ms);
+        out->evt[out->n - 1].pitch_deg = s->tilt_deg;   /* TILT: pitch_deg carries the tilt angle */
+    }
 }
 
 void imu_algo_reset_mission(imu_algo_t *s)
 {
+    /* tilted is NOT cleared here: a car still lying on its side after a RESET must not be "level" again */
     s->max_hump_mm    = 0.0f;       /* FR9: the ONLY place the running maximum is cleared */
     s->impact_latched = false;
     s->cls            = MOTION_CLASS_STATIONARY;
@@ -271,6 +316,10 @@ void imu_algo_step(imu_algo_t *s, const imu_algo_in_t *in, imu_algo_out_t *out)
     if (!s->pitch_init) {
         s->pitch_deg  = pitch_acc;
         s->pitch_init = true;
+    } else if (s->no_gyro) {
+        /* accelerometer-only chip (LSM303): low-pass the accel pitch; hold it while |a| is far from 1 g */
+        if (mm_fabsf(a_mag - 1.0f) < IMU_ACC_TRUST_BAND_G)
+            s->pitch_deg = IMU_ACC_ONLY_ALPHA * s->pitch_deg + (1.0f - IMU_ACC_ONLY_ALPHA) * pitch_acc;
     } else {
         float p = s->pitch_deg + (IMU_PITCH_RATE_SIGN * in->gy_dps) * dt;
         if (mm_fabsf(a_mag - 1.0f) < IMU_ACC_TRUST_BAND_G)       /* accel only trusted near 1 g */
@@ -293,8 +342,10 @@ void imu_algo_step(imu_algo_t *s, const imu_algo_in_t *in, imu_algo_out_t *out)
         s->moving = s->quiet_s < (IMU_QUIET_MS / 1000.0f);
     }
 
+    tilt_check(s, in, out);         /* runs even while an impact is latched */
+
     const bool armed = (now - s->start_ms) >= IMU_SHOCK_ARM_MS;
-    if (armed && !s->impact_latched && a_mag > IMU_SHOCK_G) {
+    if (IMU_IMPACT_DETECT && armed && !s->impact_latched && a_mag > IMU_SHOCK_G) {
         s->impact_latched = true;
         s->impact_ms      = now;
         s->cls            = MOTION_CLASS_SUDDEN_IMPACT;

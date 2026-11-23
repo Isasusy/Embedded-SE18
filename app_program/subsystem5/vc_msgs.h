@@ -26,7 +26,9 @@ typedef struct {
 } line_evt_t;
 
 /* Telemetry (S1) -> Vehicle Controller : remote_cmd_t  (IF-15, message buffer owned by S5) */
-typedef enum { REMOTE_START, REMOTE_STOP, REMOTE_RESET } remote_cmd_type_t;
+typedef enum { REMOTE_START, REMOTE_STOP, REMOTE_RESET,
+	       REMOTE_SPIN		/* ADDED: turn calibration, in IDLE only: one TURN of 360 deg on the spot */
+} remote_cmd_type_t;
 typedef struct {
 	int32_t		cmd;		/* remote_cmd_type_t */
 } remote_cmd_t;
@@ -40,8 +42,16 @@ typedef enum {
 
 typedef enum {
 	FAULT_NONE, FAULT_SELFTEST, FAULT_IMPACT, FAULT_IMU_SENSOR, FAULT_REMOTE_STOP,
-	FAULT_WATCHDOG, FAULT_MOTION, FAULT_OBSTACLE, FAULT_LINE_LOST, FAULT_TIMEOUT
+	FAULT_WATCHDOG, FAULT_MOTION, FAULT_OBSTACLE, FAULT_LINE_LOST, FAULT_TIMEOUT,
+	FAULT_TILT,		/* ADDED: tipped over / held tilted (S4 FLG_IMU_TILTED / IMU_EVT_TILT) */
+	FAULT_LIFTED		/* ADDED: picked up, no floor under the line sensors (S3 FLG_LINE_LIFTED) */
 } fault_code_t;
+
+/* ADDED: what INIT is still waiting for (robot_status_t.waiting), shown on the dashboard while initialising */
+#define VC_WAIT_MOTION	0x1u		/* S2 not READY yet */
+#define VC_WAIT_LINE	0x2u		/* S3 line sensors still calibrating */
+#define VC_WAIT_IMU	0x4u		/* S4 IMU not found / still calibrating */
+#define VC_WAIT_NET	0x8u		/* WiFi / MQTT not connected yet */
 
 typedef struct {
 	int32_t		state;		/* vc_state_t */
@@ -49,6 +59,7 @@ typedef struct {
 	float		max_hump_mm;	/* running maximum of the run (FR9) */
 	int32_t		fault_code;	/* fault_code_t */
 	uint32_t	timestamp_ms;
+	uint32_t	waiting;	/* ADDED: VC_WAIT_* bits, only while state == VC_INIT; 0 = nothing */
 } robot_status_t;
 
 /* Obstacle Scan -> Vehicle Controller : obstacle_t  (internal to S5, message buffer) */

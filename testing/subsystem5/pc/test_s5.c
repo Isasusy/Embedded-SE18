@@ -34,16 +34,17 @@ static float spin_r(void)
 	float o = f > r ? f : r;
 	return sqrtf(o * o + h * h);
 }
-/* the planned obstacle: SCAN_PLAN_WIDTH_PCT of the SCANNED width, centred on it, as deep as it is wide */
+/* the planned obstacle: SCAN_PLAN_WIDTH_PCT of the BEAM-CORRECTED width, centred on it, as deep as it is wide */
 static float plan_edge_t(const obstacle_t *o, int side)
 {
-	float c = 0.5f * (o->scan_left_mm + o->scan_right_mm), half = 0.5f * (o->scan_left_mm - o->scan_right_mm) * SCAN_PLAN_WIDTH_PCT / 100.0f;
+	float c = 0.5f * (o->left_edge_mm + o->right_edge_mm), half = 0.5f * (o->left_edge_mm - o->right_edge_mm) * SCAN_PLAN_WIDTH_PCT / 100.0f;
 	float e = side > 0 ? c + half : -(c - half);
 	return e < 0 ? 0 : e;
 }
 /* the planned route is geometrically sound: the heading aims outside the planned obstacle as the sensor saw it
-   (atan((ep + h) / d)), the car's side passes the planned corner, and the angled leg carries the axle a turning
-   circle past the planned back face (the whole car has passed it) before the turn back; no drive-on leg after */
+   (atan((ep + h) / d)), the car's side passes the planned corner, the angled leg ends with the centre line
+   ep + h + SCAN_SIDE_MARGIN_MM to the side, and leg + drive-on carry the axle a turning circle past the planned back
+   face (the whole car has passed it) before it turns toward the line */
 static void route_ok(const obstacle_t *o, const char *what)
 {
 	float h = VC_ROBOT_HALF_W_MM, s = VC_SENSOR_AHEAD_MM, R = spin_r();
@@ -52,7 +53,7 @@ static void route_ok(const obstacle_t *o, const char *what)
 	float ex = o->diag_mm * sinf(t), ey = o->diag_mm * cosf(t);			/* end of the angled leg */
 	float corner = (Y * tanf(t) - e) * cosf(t);					/* corner to the leg, square to it */
 	float aim = atanf((e + h) / d) / D2R;
-	float wp = (o->scan_left_mm - o->scan_right_mm) * SCAN_PLAN_WIDTH_PCT / 100.0f;
+	float wp = o->width_mm * SCAN_PLAN_WIDTH_PCT / 100.0f;
 	float dp = wp < SCAN_DEPTH_MIN_MM ? SCAN_DEPTH_MIN_MM : (wp > SCAN_DEPTH_MAX_MM ? SCAN_DEPTH_MAX_MM : wp);
 	CHECK(o->side != 0 && (o->turn_deg > 0) == (o->side > 0), "%s: turn %d on side %d", what, (int)o->turn_deg, (int)o->side);
 	CHECK(abs((int)o->turn_deg) >= 1 && abs((int)o->turn_deg) <= VC_AVOID_MAX_DEG, "%s: turn %d in range", what, (int)o->turn_deg);
@@ -64,9 +65,13 @@ static void route_ok(const obstacle_t *o, const char *what)
 	      what, td, aim);
 	CHECK(corner >= h - 1, "%s: car side passes the planned corner (%.0f from the leg, half width %.0f)", what, corner, h);
 	CHECK(fabsf(ex - o->lat_mm) <= 2, "%s: leg reaches lat %d (%.0f)", what, (int)o->lat_mm, ex);
-	CHECK(fabsf(ey - (Y + o->depth_mm + R)) <= 2, "%s: leg ends a turning circle past the back face (%.0f vs %.0f)",
-	      what, ey, Y + o->depth_mm + R);
-	CHECK(o->pass_mm == 0, "%s: no drive-on leg (%d)", what, (int)o->pass_mm);
+	CHECK(fabsf((float)o->lat_mm - (e + h + SCAN_SIDE_MARGIN_MM)) <= 1, "%s: beside it, side %d mm clear of the planned edge",
+	      what, (int)(o->lat_mm - e - h));
+	CHECK((o->pass_mm >= 0 && fabsf(ey + o->pass_mm - (Y + o->depth_mm + R)) <= 2) ||
+	      (o->pass_mm == 0 && ey >= Y + o->depth_mm + R - 2),
+	      "%s: leg + drive-on end a turning circle past the back face (%.0f + %d vs %.0f)", what, ey, (int)o->pass_mm,
+	      Y + o->depth_mm + R);
+	CHECK(o->lat_mm < 600, "%s: sideways detour stays modest (%d mm)", what, (int)o->lat_mm);
 }
 
 /* the robot's profile sweep: servo 30..150 deg = relative -60..+60 */
@@ -87,7 +92,7 @@ static void tick(h_t *h, const remote_cmd_t *r, const nav_cmd_t *n, const line_e
 {
 	h->now += VC_TICK_MS;
 	h->in = (vc_in_t){ .now_ms = h->now, .remote = r, .nav = n, .line = l, .imu = i, .obst = ob,
-			   .motion_done = done, .obstacle_close = close, .all_ready = true, .all_alive = true };
+			   .motion_done = done, .obstacle_close = close, .all_ready = true, .all_alive = true, .net_ready = true };
 	vc_step(&h->v, &h->in, &h->o);
 }
 /* one tick with the scan task's view: close flag, tracked distance, a profile result, motion done, a line event */
@@ -95,14 +100,14 @@ static void tick_ob(h_t *h, bool close, int mm, const obstacle_t *ob, bool done,
 {
 	h->now += VC_TICK_MS;
 	h->in = (vc_in_t){ .now_ms = h->now, .line = l, .obst = ob, .motion_done = done, .obstacle_close = close,
-			   .obstacle_mm = close ? mm : 0, .all_ready = true, .all_alive = true };
+			   .obstacle_mm = close ? mm : 0, .all_ready = true, .all_alive = true, .net_ready = true };
 	vc_step(&h->v, &h->in, &h->o);
 }
 /* a tick in which the scan task only reports the obstacle as still there (within the hold distance, not close) */
 static void tick_pr(h_t *h, int mm)
 {
 	h->now += VC_TICK_MS;
-	h->in = (vc_in_t){ .now_ms = h->now, .obstacle_present = true, .obstacle_mm = mm, .all_ready = true, .all_alive = true };
+	h->in = (vc_in_t){ .now_ms = h->now, .obstacle_present = true, .obstacle_mm = mm, .all_ready = true, .all_alive = true, .net_ready = true };
 	vc_step(&h->v, &h->in, &h->o);
 }
 static void idle(h_t *h, int ticks) { for (int k = 0; k < ticks; k++) tick(h, 0, 0, 0, 0, 0, false, false); }
@@ -160,9 +165,10 @@ int main(void)
 		obstacle_t a, b;
 		profile(ang, d, &n, 60, 300, 0); scan_analyze(ang, d, n, &a);
 		profile(ang, d, &n, 200, 300, 0); scan_analyze(ang, d, n, &b);
-		float ga = a.lat_mm - fabsf(a.side > 0 ? a.scan_left_mm : a.scan_right_mm);
-		float gb = b.lat_mm - fabsf(b.side > 0 ? b.scan_left_mm : b.scan_right_mm);
-		float sa = a.scan_left_mm - a.scan_right_mm, sb = b.scan_left_mm - b.scan_right_mm;
+		/* measured from the beam-corrected edge, which is what the plan enlarges */
+		float ga = a.lat_mm - fabsf(a.side > 0 ? a.left_edge_mm : a.right_edge_mm);
+		float gb = b.lat_mm - fabsf(b.side > 0 ? b.left_edge_mm : b.right_edge_mm);
+		float sa = a.width_mm, sb = b.width_mm;		/* the plan enlarges the beam-corrected width */
 		CHECK(gb - ga > 0.5f * (sb - sa) * (SCAN_PLAN_WIDTH_PCT - 100) / 100.0f - 2,
 		      "clearance grows with width: %.0f mm (w %.0f) -> %.0f mm (w %.0f)", ga, a.width_mm, gb, b.width_mm);
 	}
@@ -202,7 +208,7 @@ int main(void)
 	route_ok(&ob, "160 wide");
 	profile(ang, d, &n, 30, 220, 0);
 	scan_analyze(ang, d, n, &ob);
-	CHECK(ob.found && ob.depth_mm == fmaxf(SCAN_DEPTH_MIN_MM, (ob.scan_left_mm - ob.scan_right_mm) * SCAN_PLAN_WIDTH_PCT / 100.0f), "thin obstacle: depth %d (width %.0f, never below the minimum)", (int)ob.depth_mm, ob.width_mm);
+	CHECK(ob.found && fabsf(ob.depth_mm - fmaxf(SCAN_DEPTH_MIN_MM, ob.width_mm * SCAN_PLAN_WIDTH_PCT / 100.0f)) < 0.5f, "thin obstacle: depth %d (width %.0f, never below the minimum)", (int)ob.depth_mm, ob.width_mm);
 	/* 15. no usable side: no route */
 	for (int i = 0; i < n; i++) d[i] = 250;
 	scan_analyze(ang, d, n, &ob);
@@ -233,26 +239,27 @@ int main(void)
 	scan_analyze(ang, d, n, &ob);
 	CHECK(ob.found && ob.side == 0 && ob.left_clear_mm >= 2 * VC_ROBOT_HALF_W_MM, "220 mm gap: no route (side %d, L=%.0f)", ob.side, ob.left_clear_mm);
 
-	/* 18. an obstacle to the LEFT of the path (60 mm wide, 60..120 mm left, 230 mm ahead): the straight-ahead ray
-	   misses it, so from 0 deg it is not found; from the angle the watch sweep hit it at (20 deg) it is */
-	profile(ang, d, &n, 60, 230, +90);
+	/* 18. an obstacle to the LEFT of the path (60 mm wide, 100..160 mm left, 230 mm ahead): the straight-ahead rays
+	   (beam +-SCAN_BEAM_HALF_DEG) miss it, so from 0 deg it is not found; from the angle the watch sweep hit it at
+	   (30 deg) it is */
+	profile(ang, d, &n, 60, 230, +130);
 	{
 		int c0 = 12;					/* index of 0 deg in the 25-ray profile */
 		CHECK(ang[c0] == 0 && d[c0] < 0 && d[c0 - 1] < 0 && d[c0 + 1] < 0, "off-centre case: rays at 0 and +-5 deg miss it");
 	}
 	scan_analyze(ang, d, n, &ob);
 	CHECK(!ob.found, "profiled from straight ahead: off-centre obstacle missed (found=%d)", ob.found);
-	scan_analyze_from(ang, d, n, 20, &ob);
+	scan_analyze_from(ang, d, n, 30, &ob);
 	CHECK(ob.found && ob.scan_right_mm > 0 && ob.scan_left_mm > 100, "profiled from the hit angle: found (scanned %.0f..%.0f)",
 	      ob.scan_right_mm, ob.scan_left_mm);
 	CHECK(ob.side == -1, "obstacle on the left -> pass it on the right (side %d)", ob.side);
 	if (ob.side) route_ok(&ob, "off-centre, from the hit angle");
 	/* 19. the hit-angle ray itself dropped out: a neighbour starts it */
 	{
-		int c20 = 16;					/* index of +20 deg */
-		CHECK(ang[c20] == 20, "index of 20 deg");
-		d[c20] = -1;
-		scan_analyze_from(ang, d, n, 20, &ob);
+		int c30 = 18;					/* index of +30 deg */
+		CHECK(ang[c30] == 30, "index of 30 deg");
+		d[c30] = -1;
+		scan_analyze_from(ang, d, n, 30, &ob);
 		CHECK(ob.found, "hit-angle reading dropped out -> a neighbour starts the profile");
 	}
 	/* 20. nothing near the hit angle (the obstacle is gone): falls back to straight ahead, here nothing -> not found */
@@ -260,13 +267,84 @@ int main(void)
 	scan_analyze_from(ang, d, n, 20, &ob);
 	CHECK(!ob.found, "nothing at the hit angle or ahead -> not found");
 
+	/* 21. a real profile from the robot (23 Nov): box ~104 mm ahead, echoes from servo 45 to 125 deg because of the wide
+	   beam, open space beyond on both sides. The old plan (200 % of the uncorrected width, one long diagonal) needed
+	   2398 mm of free space on each side, so the car never passed it. It must now have a route. */
+	{
+		static const int real_mm[25] = { 407, 296, 416, 140, 140, 122, 104, 122, 122, 107, 108, 108, 108,
+						 125, 125, 125, 116, 125, 125, 155, 366, 366, 515, 510, 510 };
+		for (int i = 0; i < 25; i++) { ang[i] = SCAN_PROFILE_START_DEG + 5 * i - SCAN_SERVO_CENTRE_DEG; d[i] = real_mm[i]; }
+		scan_analyze_from(ang, d, 25, -30, &ob);
+		CHECK(ob.found && fabsf(ob.distance_mm - 104) < 1, "robot sweep: found at %.0f mm", ob.distance_mm);
+		CHECK(ob.width_mm > 60 && ob.width_mm < 160, "robot sweep: beam-corrected width %.0f mm (box ~100)", ob.width_mm);
+		CHECK(ob.side != 0, "robot sweep: a route exists (side %d, L free %.0f need %.0f, R free %.0f need %.0f)", ob.side,
+		      ob.left_clear_mm, scan_route_need(&ob, +1), ob.right_clear_mm, scan_route_need(&ob, -1));
+		if (ob.side) {
+			route_ok(&ob, "robot sweep");
+			printf("  robot sweep plan: side %d, turn %d deg, leg %d mm, beside at %d mm, drive on %d mm\n",
+			       ob.side, (int)ob.turn_deg, (int)ob.diag_mm, (int)ob.lat_mm, (int)ob.pass_mm);
+		}
+	}
+
 	/* ---------- VC ---------- */
 	h_t h;
 	init(&h);
 	CHECK(h.v.state == VC_IDLE, "INIT -> IDLE when all ready");
 	{ h_t g; memset(&g, 0, sizeof g); g.now = 1000; vc_init(&g.v);
-	  for (int k = 0; k < 400; k++) { g.now += VC_TICK_MS; g.in = (vc_in_t){ .now_ms = g.now, .all_alive = true }; vc_step(&g.v, &g.in, &g.o); }
+	  for (int k = 0; k < VC_SELFTEST_MS / VC_TICK_MS + 10; k++) { g.now += VC_TICK_MS; g.in = (vc_in_t){ .now_ms = g.now, .all_alive = true }; vc_step(&g.v, &g.in, &g.o); }
 	  CHECK(g.v.state == VC_FAULT && g.v.fault == FAULT_SELFTEST, "self-test timeout -> FAULT"); }
+
+	/* initialising: stays in INIT (and says what it waits for) until everything is READY; START is ignored meanwhile */
+	{ h_t g; memset(&g, 0, sizeof g); g.now = 1000; vc_init(&g.v);
+	  robot_status_t last = { 0 };				/* the last status actually sent */
+	  for (int k = 0; k < 50; k++) {
+		g.now += VC_TICK_MS;
+		g.in = (vc_in_t){ .now_ms = g.now, .all_alive = true, .waiting = VC_WAIT_IMU | VC_WAIT_LINE,
+				  .remote = (k == 10) ? &START : 0 };
+		vc_step(&g.v, &g.in, &g.o);
+		if (g.o.send_status) last = g.o.status;
+	  }
+	  CHECK(g.v.state == VC_INIT && last.state == VC_INIT &&
+		last.waiting == (VC_WAIT_IMU | VC_WAIT_LINE | (VC_WAIT_FOR_NET ? VC_WAIT_NET : 0)),
+		"INIT while IMU/line not ready, START ignored, status.waiting = 0x%x", (unsigned)last.waiting);
+	  for (int k = 0; k < 5; k++) {
+		g.now += VC_TICK_MS;
+		g.in = (vc_in_t){ .now_ms = g.now, .all_alive = true, .all_ready = true, .net_ready = true };
+		vc_step(&g.v, &g.in, &g.o);
+		if (g.o.send_status) last = g.o.status;
+	  }
+	  CHECK(g.v.state == VC_IDLE && last.state == VC_IDLE && last.waiting == 0, "all READY (+ MQTT) -> IDLE, nothing waiting");
+#if VC_WAIT_FOR_NET
+	  h_t n; memset(&n, 0, sizeof n); n.now = 1000; vc_init(&n.v);
+	  for (int k = 0; k < 100; k++) {
+		n.now += VC_TICK_MS;
+		n.in = (vc_in_t){ .now_ms = n.now, .all_alive = true, .all_ready = true, .net_ready = false };
+		vc_step(&n.v, &n.in, &n.o);
+		if (n.o.send_status) last = n.o.status;
+	  }
+	  CHECK(n.v.state == VC_INIT && last.waiting == VC_WAIT_NET, "subsystems ready, MQTT not: still INIT, waiting WIFI");
+	  n.now += VC_TICK_MS; n.in = (vc_in_t){ .now_ms = n.now, .all_alive = true, .all_ready = true, .net_ready = true };
+	  vc_step(&n.v, &n.in, &n.o);
+	  CHECK(n.v.state == VC_IDLE, "MQTT up -> IDLE");
+	  h_t q; memset(&q, 0, sizeof q); q.now = 1000; vc_init(&q.v);
+	  for (int k = 0; k < VC_NET_WAIT_MS / VC_TICK_MS + 10; k++) {
+		q.now += VC_TICK_MS;
+		q.in = (vc_in_t){ .now_ms = q.now, .all_alive = true, .all_ready = true, .net_ready = false };
+		vc_step(&q.v, &q.in, &q.o);
+	  }
+	  CHECK(q.v.state == VC_IDLE, "no WiFi for VC_NET_WAIT_MS: IDLE anyway (runs without the dashboard)");
+#endif
+	}
+
+	/* turn calibration: SPIN in IDLE = one TURN 360, state stays IDLE; ignored while driving */
+	{ static const remote_cmd_t SPIN = { REMOTE_SPIN };
+	  tick(&h, &SPIN, 0, 0, 0, 0, false, false);
+	  CHECK(h.v.state == VC_IDLE && h.o.send_motion && h.o.motion.type == MOTION_CMD_TURN && h.o.motion.angle_deg == 360,
+		"SPIN in IDLE -> TURN 360, still IDLE");
+	  tick(&h, &START, 0, 0, 0, 0, false, false);
+	  tick(&h, &SPIN, 0, 0, 0, 0, false, false);
+	  CHECK(h.v.state == VC_LINE_FOLLOW && !(h.o.send_motion && h.o.motion.type == MOTION_CMD_TURN), "SPIN ignored while driving");
+	  tick(&h, &RESET, 0, 0, 0, 0, false, false); idle(&h, 2); }
 
 	/* IDLE never moves without START */
 	idle(&h, 20);
@@ -327,8 +405,15 @@ int main(void)
 
 	/* impact -> FAULT with STOP bit and stop command, status carries the max */
 	imu_evt_t hit = { .type = IMU_EVT_IMPACT };
+	const int st_before = (int)h.v.state;
 	tick(&h, 0, 0, 0, &hit, 0, false, false);
+#if VC_STOP_ON_IMPACT
 	CHECK(h.v.state == VC_FAULT && h.o.stop_set && h.o.motion.type == MOTION_CMD_STOP && h.v.fault == FAULT_IMPACT, "IMPACT -> FAULT + STOP bit");
+#else
+	CHECK((int)h.v.state == st_before && !h.o.stop_set, "IMPACT ignored (VC_STOP_ON_IMPACT 0): the car keeps driving");
+	tick(&h, &STOPC, 0, 0, 0, 0, false, false);		/* into FAULT another way for the checks below */
+#endif
+	(void)st_before;
 	CHECK(h.o.send_status && h.o.status.state == VC_FAULT, "fault published at once");
 	tick(&h, &START, 0, 0, 0, 0, false, false);
 	CHECK(h.v.state == VC_FAULT, "START ignored in FAULT");
@@ -344,13 +429,39 @@ int main(void)
 
 	/* motion fault, IMU sensor fault */
 	tick(&h, &START, 0, 0, 0, 0, false, false);
-	h.now += VC_TICK_MS; h.in = (vc_in_t){ .now_ms = h.now, .motion_fault = true, .all_ready = true, .all_alive = true }; vc_step(&h.v, &h.in, &h.o);
+	h.now += VC_TICK_MS; h.in = (vc_in_t){ .now_ms = h.now, .motion_fault = true, .all_ready = true, .all_alive = true, .net_ready = true }; vc_step(&h.v, &h.in, &h.o);
 	CHECK(h.v.state == VC_FAULT && h.v.fault == FAULT_MOTION, "motion stall -> FAULT");
 	tick(&h, &RESET, 0, 0, 0, 0, false, false); idle(&h, 2);
 	tick(&h, &START, 0, 0, 0, 0, false, false);
 	imu_evt_t sf = { .type = IMU_EVT_SENSOR_FAULT };
 	tick(&h, 0, 0, 0, &sf, 0, false, false);
 	CHECK(h.v.state == VC_FAULT && h.v.fault == FAULT_IMU_SENSOR, "IMU sensor fault -> FAULT");
+	tick(&h, &RESET, 0, 0, 0, 0, false, false); idle(&h, 2);
+
+	/* tipped over / picked up while driving -> stop; refuse to start while still tilted or lifted */
+	tick(&h, &START, 0, 0, 0, 0, false, false);
+	imu_evt_t tl = { .type = IMU_EVT_TILT, .pitch_deg = 60.0f };
+	tick(&h, 0, 0, 0, &tl, 0, false, false);
+	CHECK(h.v.state == VC_FAULT && h.v.fault == FAULT_TILT && h.o.stop_set && h.o.motion.type == MOTION_CMD_STOP,
+	      "TILT event -> FAULT_TILT + STOP bit");
+	tick(&h, &RESET, 0, 0, 0, 0, false, false); idle(&h, 2);
+	tick(&h, &START, 0, 0, 0, 0, false, false);
+	h.now += VC_TICK_MS; h.in = (vc_in_t){ .now_ms = h.now, .tilted = true, .all_ready = true, .all_alive = true, .net_ready = true }; vc_step(&h.v, &h.in, &h.o);
+	CHECK(h.v.state == VC_FAULT && h.v.fault == FAULT_TILT && h.o.stop_set, "tilted flag while driving -> FAULT_TILT");
+	tick(&h, &RESET, 0, 0, 0, 0, false, false); idle(&h, 2);
+	tick(&h, &START, 0, 0, 0, 0, false, false);
+	h.now += VC_TICK_MS; h.in = (vc_in_t){ .now_ms = h.now, .lifted = true, .all_ready = true, .all_alive = true, .net_ready = true }; vc_step(&h.v, &h.in, &h.o);
+	CHECK(h.v.state == VC_FAULT && h.v.fault == FAULT_LIFTED && h.o.stop_set, "lifted while driving -> FAULT_LIFTED");
+	tick(&h, &RESET, 0, 0, 0, 0, false, false); idle(&h, 2);
+	CHECK(h.v.state == VC_IDLE, "back to IDLE after reset");
+	h.now += VC_TICK_MS; h.in = (vc_in_t){ .now_ms = h.now, .lifted = true, .all_ready = true, .all_alive = true, .net_ready = true }; vc_step(&h.v, &h.in, &h.o);
+	CHECK(h.v.state == VC_IDLE && !h.o.send_motion, "lifted while IDLE: no fault, nothing moves");
+	h.now += VC_TICK_MS; h.in = (vc_in_t){ .now_ms = h.now, .remote = &START, .tilted = true, .all_ready = true, .all_alive = true, .net_ready = true }; vc_step(&h.v, &h.in, &h.o);
+	CHECK(h.v.state == VC_FAULT && h.v.fault == FAULT_TILT && !(h.o.send_motion && h.o.motion.type == MOTION_CMD_GO),
+	      "START while tilted is refused -> FAULT_TILT, never GO");
+	tick(&h, &RESET, 0, 0, 0, 0, false, false); idle(&h, 2);
+	tick(&h, &START, 0, 0, 0, 0, false, false);
+	CHECK(h.v.state == VC_LINE_FOLLOW, "START works again once level and on the floor");
 	tick(&h, &RESET, 0, 0, 0, 0, false, false); idle(&h, 2);
 
 	/* watchdog: a task stops reporting alive for > 100 ms */
