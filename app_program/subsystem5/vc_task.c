@@ -13,6 +13,10 @@
 #include "vc_config.h"
 #include "drv_scan.h"
 #include "s5_port.h"
+#include "../subsystem2/motion_config.h"
+
+_Static_assert(1000 * VC_MOVE_MAX_MM / VC_CRUISE_SPEED + 1500 < MC_CMD_TIMEOUT_MS,
+	       "VC_MOVE_MAX_MM must finish well within S2's MC_CMD_TIMEOUT_MS at VC_CRUISE_SPEED");
 
 static uint32_t s_next_us;
 
@@ -42,7 +46,13 @@ void vc_task(INT stacd, void *exinf)
 	vc_out_t out;
 	remote_cmd_t remote; nav_cmd_t nav; line_evt_t line; imu_evt_t imu; obstacle_t obst;
 	int last_state = -1;
-	bool scan_run = false;
+	float heading = 0.0f, odo = 0.0f;	/* from Motion Control, for the avoidance trace */
+#if S5_DEBUG_PRINT
+	bool av_on = false;			/* the avoidance trace is running */
+	int av_key = 0;				/* OBSTACLE_AVOID sub-state * 16 + step, last printed */
+	float av_h0 = 0.0f, av_d0 = 0.0f;	/* heading at the start of the avoidance, odometer at the last step */
+#endif
+	bool scan_run = false, scan_hold = false;
 #if VC_AUTOSTART_MS && !VC_START_BUTTON
 	bool autostarted = false;
 #endif
@@ -115,6 +125,8 @@ void vc_task(INT stacd, void *exinf)
 #endif
 
 		in.obstacle_close = flag(flg_scan, FLG_SCAN_CLOSE, true);
+		in.obstacle_present = flag(flg_scan, FLG_SCAN_PRESENT, true);
+		in.obstacle_mm    = s5_track_mm;
 		in.motion_fault   = flag(flg_motion, FLG_MOTION_FAULT, true);
 
 		in.all_ready = flag(flg_motion, FLG_MOTION_READY, false) &&
@@ -130,6 +142,8 @@ void vc_task(INT stacd, void *exinf)
 			motion_status_t ms = app_motion;
 			tk_unl_mtx(mtx_motion);
 			in.motion_done = ms.cmd_done;
+			heading = ms.heading_deg;
+			odo = ms.distance_mm;
 			in.speed_mm_s = (int)(0.5f * (ms.speed_l + ms.speed_r));
 		}
 
@@ -146,6 +160,24 @@ void vc_task(INT stacd, void *exinf)
 		}
 #endif
 		vc_step(&v, &in, &out);
+#if S5_DEBUG_PRINT
+		/* avoidance trace: after each step, how far the car really turned and drove (compare with the [S5] plan line) */
+		if (v.state == VC_OBSTACLE_AVOID && (v.sub == OB_BYPASS || v.sub == OB_SEARCH)) {
+			int key = v.sub * 16 + v.step;
+			if (!av_on) {
+				av_on = true;
+				av_h0 = heading; av_d0 = odo;
+				S5_PRINTF("[S5] avoid: start, heading %d deg\n", (int)heading);
+			} else if (key != av_key) {
+				S5_PRINTF("[S5] avoid: step %d done, heading %d deg from the start (+ = left), drove %d mm\n",
+					  av_key % 16, (int)(heading - av_h0), (int)(odo - av_d0));
+				av_d0 = odo;
+			}
+			av_key = key;
+		} else {
+			av_on = false;
+		}
+#endif
 
 		if (out.stop_set)
 			tk_set_flg(flg_motion, FLG_MOTION_STOP);
@@ -153,7 +185,7 @@ void vc_task(INT stacd, void *exinf)
 			tk_clr_flg(flg_motion, ~(UINT)(FLG_MOTION_STOP | FLG_MOTION_FAULT));	/* STOP off first ... */
 			tk_set_flg(flg_motion, FLG_MOTION_RESET);				/* ... then RESET */
 			tk_set_flg(flg_imu, FLG_IMU_RESET);					/* clears the IMU's running max hump */
-			tk_clr_flg(flg_scan, ~(UINT)FLG_SCAN_CLOSE);
+			tk_clr_flg(flg_scan, ~(UINT)(FLG_SCAN_CLOSE | FLG_SCAN_PRESENT));
 		}
 		if (out.send_motion)
 			tk_snd_mbf(mbf_motion_cmd, &out.motion, sizeof out.motion, TMO_POL);
@@ -168,6 +200,11 @@ void vc_task(INT stacd, void *exinf)
 				scan_run = run;
 				if (run) tk_set_flg(flg_scan, FLG_SCAN_RUN);
 				else     tk_clr_flg(flg_scan, ~(UINT)FLG_SCAN_RUN);
+			}
+			if (out.scan_hold != scan_hold) {	/* stopped for an obstacle: track it with the hold distance */
+				scan_hold = out.scan_hold;
+				if (scan_hold) tk_set_flg(flg_scan, FLG_SCAN_HOLD);
+				else           tk_clr_flg(flg_scan, ~(UINT)FLG_SCAN_HOLD);
 			}
 		}
 		if (out.send_status && mbf_status > 0)

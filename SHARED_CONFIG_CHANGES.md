@@ -41,7 +41,7 @@ File: `config/config_device.h`
 | subsystem5/vc_config.h | VC_REQUIRE_IMU | 0 (IMU does not answer on the bench) | 1 |
 | subsystem5/vc_config.h | VC_WATCHDOG_ENABLE | 0 | 1 |
 | subsystem5/vc_config.h | VC_BENCH_LINE_ONLY | 1 (creep at VC_BENCH_SPEED 90 mm/s, ignore humps and the IMU; stops for obstacles; barcodes only with VC_BENCH_BARCODES) | 0 |
-| subsystem5/vc_config.h | SCAN_CLOSE_MM / SCAN_WATCH_DEG / SERVO_TRIM_DEG / SERVO_REVERSE | 200 / 0 / 0 / 0 (adjust on the robot) | keep adjusted values |
+| subsystem5/vc_config.h | SCAN_CLOSE_MM / SCAN_WATCH_DEG / SERVO_TRIM_DEG / SERVO_REVERSE | 300 / 0 / 0 / 0 (adjust on the robot) | keep adjusted values |
 | subsystem5/vc_config.h | SCAN_WATCH_SWEEP_DEG / STEP / SETTLE_MS / SCAN_PATH_HALF_W_MM | 30 / 5 / 45 / 120 (continuous servo sweep while driving) | keep |
 | subsystem5/vc_config.h | S5_SERVO_TEST, S5_ULTRA_PRINT | 0, 1 | 0, 0 |
 | subsystem3/line_config.h | LINE_STEER_GAIN / LINE_STEER_MIN / LINE_STEER_HOLD_MS | 240 / 110 / 200 (stronger steering on curves) | keep, tune on the track |
@@ -55,3 +55,9 @@ File: `config/config_device.h`
 | subsystem2/motion_config.h | MC_STEER_MAX | 200 (inner wheel may slow to 0 or reverse on a tight curve) | keep |
 | app_program/app_console.h | APP_CONSOLE | 1 (0 = no printing, for battery runs without the USB cable) | 0 at integration unless a console is wanted |
 | subsystem3/line_config.h | LINE_STEER_TOWARD_BLACK | 1 (one line between the sensors) | flip to 0 if it steers the wrong way |
+
+## Obstacle message (`subsystem5/vc_msgs.h`, used by S1), 19 Nov
+`obstacle_t` gained `left_edge_mm`, `right_edge_mm`, `depth_mm`, `turn_deg`, `diag_mm`, `lat_mm` and `pass_mm` at the end, so
+`obstacle_profile_t` (shared memory read by S1) grew too. S1's `tm_format_obstacle()` now adds
+`"depth_mm"`, `"turn_deg"`, `"diag_mm"`, `"lat_mm"` and `"pass_mm"` to the `robot/se18/obstacle` JSON. It is still under 512 bytes in the worst
+case (checked by `testing/subsystem1/pc`). S1 copies the record by `sizeof`, so a rebuild is all it needs.

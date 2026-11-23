@@ -59,6 +59,17 @@ typedef struct {
 	float		left_clear_mm;	/* free space beside the obstacle, left  */
 	float		right_clear_mm;	/* free space beside the obstacle, right */
 	int32_t		side;		/* chosen side: +1 left, -1 right, 0 = neither is wide enough */
+	float		left_edge_mm;	/* sideways position of the obstacle's left edge,  + = left of the car's centre line */
+	float		right_edge_mm;	/* sideways position of the obstacle's right edge, + = left of the car's centre line */
+	float		scan_left_mm;	/* SCANNED edges: half a step beyond the outermost rays that echoed, no beam correction */
+	float		scan_right_mm;	/* (+ = left). The route is planned from these: the widest the sensor saw it */
+	float		depth_mm;	/* planned depth = scanned width x SCAN_PLAN_WIDTH_PCT (the sensor cannot see behind), clamped */
+	/* planned avoidance (all 0 if side == 0): turn turn_deg, drive diag_mm until beside the obstacle, turn back
+	   -turn_deg; then line finding: drive pass_mm past it, turn -turn_deg toward the line, creep until it is found */
+	int32_t		turn_deg;	/* + = left; its sign is the chosen side */
+	int32_t		diag_mm;	/* the angled leg */
+	int32_t		lat_mm;		/* sideways offset that leg reaches (car centre from the original path) */
+	int32_t		pass_mm;	/* parallel leg from beside the obstacle until the car is past its back face */
 } obstacle_t;
 
 /* Obstacle Scan -> Telemetry (S1) : the last profiling sweep, raw rays plus the analysis.

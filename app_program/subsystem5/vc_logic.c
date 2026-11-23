@@ -50,23 +50,85 @@ static void manoeuvre(vc_t *v, vc_out_t *o, motion_cmd_type_t t, int angle, int 
 	v->settle = VC_SETTLE_TICKS;
 }
 
-/* OBSTACLE_AVOID bypass: turn aside, drive past, turn back toward the line (statechart 6.4 BYPASS / REJOIN) */
-#define BYPASS_STEPS 7
-static void bypass_step(vc_t *v, vc_out_t *o, int i)
+
+/* OBSTACLE_AVOID route, planned by scan_analyze() from the profile (turn angle from the obstacle's width and edge):
+     avoidance:    0 TURN turn_deg, 1 MOVE diag_mm (ends past the obstacle), 2 TURN -turn_deg (parallel again)
+     line finding: 3 MOVE pass_mm (past the back face, depth = width), 4 TURN -turn_deg (toward the line),
+                   then creep at VC_RECOVER_SPEED, heading held, until a line sensor finds the line -> LINE_FOLLOW */
+#define AVOID_STEPS 5
+
+/* the next piece of the current MOVE: at most VC_MOVE_MAX_MM, so S2 never times a long one out */
+static void move_part(vc_t *v, vc_out_t *o)
 {
-	int s = v->ob.side;						/* +1 = bypass on the left */
-	int lat = (int)(v->ob.width_mm / 2) + VC_ROBOT_HALF_W_MM + VC_SIDE_MARGIN_MM;
-	int fwd = (int)v->ob.distance_mm + VC_OBST_DEPTH_MM + VC_ROBOT_LEN_MM;
+	int d = v->move_left > VC_MOVE_MAX_MM ? VC_MOVE_MAX_MM : v->move_left;
+	v->move_left -= d;
+	manoeuvre(v, o, MOTION_CMD_MOVE, 0, d);
+}
+
+static void avoid_step(vc_t *v, vc_out_t *o, int i)
+{
+	int t = (int)v->ob.turn_deg;					/* + = round the left side */
 
 	switch (i) {
-	case 0: manoeuvre(v, o, MOTION_CMD_TURN, s * 90, 0); break;
-	case 1: manoeuvre(v, o, MOTION_CMD_MOVE, 0, lat); break;
-	case 2: manoeuvre(v, o, MOTION_CMD_TURN, -s * 90, 0); break;
-	case 3: manoeuvre(v, o, MOTION_CMD_MOVE, 0, fwd); break;
-	case 4: manoeuvre(v, o, MOTION_CMD_TURN, -s * 90, 0); break;
-	case 5: manoeuvre(v, o, MOTION_CMD_MOVE, 0, lat); break;
-	case 6: manoeuvre(v, o, MOTION_CMD_TURN, s * 90, 0); break;
+	case 0: manoeuvre(v, o, MOTION_CMD_TURN, t, 0); break;
+	case 1: v->move_left = (int)v->ob.diag_mm; move_part(v, o); break;
+	case 2: manoeuvre(v, o, MOTION_CMD_TURN, -t, 0); break;
+	case 3: v->move_left = (int)v->ob.pass_mm; move_part(v, o); break;	/* 0 = done at once */
+	case 4: manoeuvre(v, o, MOTION_CMD_TURN, -t, 0); break;
 	}
+}
+
+/* the creep back to the line covers about diag_mm; give up after that plus VC_REJOIN_EXTRA_MM at creep speed */
+static uint32_t search_ms(const vc_t *v)
+{
+	return 1000u + (uint32_t)(1000 * ((int)v->ob.diag_mm + VC_REJOIN_EXTRA_MM) / VC_RECOVER_SPEED);
+}
+
+static void resume(vc_t *v, vc_out_t *o, uint32_t now)
+{
+	go(v, o, VC_CRUISE_SPEED);
+	enter(v, o, VC_LINE_FOLLOW, now);
+}
+
+/* (re)start the CONFIRM wait: the obstacle must now stay VC_OBST_STILL_MS */
+static void confirm_start(vc_t *v, int mm, uint32_t now)
+{
+	v->sub = OB_CONFIRM;
+	v->t_close = v->t_still = now;
+	v->still_min = v->still_max = mm > 0 ? mm : 0;
+}
+
+/* something close ahead while driving: stop and start watching whether it stays */
+static void obstacle_stop(vc_t *v, vc_out_t *o, const vc_in_t *in, uint32_t now)
+{
+	cmd(o, MOTION_CMD_STOP, 0, 0, 0);
+	enter(v, o, VC_OBSTACLE_AVOID, now);
+	confirm_start(v, in->obstacle_mm, now);
+}
+
+/* a still object keeps its distance; one that moves more than VC_OBST_STILL_TOL_MM restarts the wait */
+static void still_track(vc_t *v, int mm, uint32_t now)
+{
+	if (mm <= 0) return;
+	if (v->still_min <= 0) { v->still_min = v->still_max = mm; return; }
+	if (mm < v->still_min) v->still_min = mm;
+	if (mm > v->still_max) v->still_max = mm;
+	if (v->still_max - v->still_min > VC_OBST_STILL_TOL_MM) {
+		v->t_still = now;
+		v->still_min = v->still_max = mm;
+	}
+}
+
+/* no usable side (or no profile): bench = watch it again and re-profile; mission = fault */
+static void no_way(vc_t *v, vc_out_t *o, const vc_in_t *in, uint32_t now)
+{
+#if VC_BENCH_LINE_ONLY
+	(void)o;
+	confirm_start(v, in->obstacle_mm, now);
+#else
+	(void)in;
+	enter_fault(v, o, FAULT_OBSTACLE, now);
+#endif
 }
 
 /* A junction: stop, pause VC_JUNCTION_PAUSE_MS, then do the remembered barcode command (drive to the junction centre
@@ -146,10 +208,7 @@ void vc_step(vc_t *v, const vc_in_t *in, vc_out_t *o)
 	case VC_LINE_FOLLOW:
 #if VC_BENCH_LINE_ONLY
 		if (in->obstacle_close) {
-			cmd(o, MOTION_CMD_STOP, 0, 0, 0);
-			o->scan_request = true;			/* sweep the servo and profile it while we wait */
-			v->sub = 0;
-			enter(v, o, VC_OBSTACLE_AVOID, now);
+			obstacle_stop(v, o, in, now);
 			break;
 		}
 #if VC_BENCH_BARCODES
@@ -179,10 +238,7 @@ void vc_step(vc_t *v, const vc_in_t *in, vc_out_t *o)
 			v->nav_has = false;
 
 		if (in->obstacle_close) {
-			cmd(o, MOTION_CMD_STOP, 0, 0, 0);
-			o->scan_request = true;
-			v->sub = 0;
-			enter(v, o, VC_OBSTACLE_AVOID, now);
+			obstacle_stop(v, o, in, now);
 		} else if (in->line && in->line->type == LINE_EVT_JUNCTION && (v->nav_has || VC_JUNCTION_PAUSE_ALWAYS)) {
 			junction_action(v, o, now);
 		} else if (in->line && in->line->type == LINE_EVT_LOST) {
@@ -241,58 +297,66 @@ void vc_step(vc_t *v, const vc_in_t *in, vc_out_t *o)
 		break;
 
 	case VC_OBSTACLE_AVOID:
-#if VC_BENCH_LINE_ONLY
-		if (v->sub == 0) {				/* wait for the sweep result (it is printed by the scan task) */
-			if (in->obst) { v->ob = *in->obst; v->sub = 3; v->t_sub = now; }
-			else if (now - v->t_state > VC_SCAN_TIMEOUT_MS) { v->sub = 3; v->t_sub = now; }
-		} else {					/* HOLD: stay stopped until nothing has been close for a while */
-			if (in->obstacle_close) {
-				v->t_sub = now;
-			} else if (now - v->t_sub >= VC_BENCH_CLEAR_MS) {
-				go(v, o, VC_CRUISE_SPEED);
-				enter(v, o, VC_LINE_FOLLOW, now);
+		if (v->sub == OB_CONFIRM) {			/* STOPPED: does it stay, at a steady distance? */
+			if (in->obstacle_close || in->obstacle_present) {	/* still there (hold distance, hysteresis) */
+				v->t_close = now;
+				if (in->obstacle_close)
+					still_track(v, in->obstacle_mm, now);
+			} else if (now - v->t_close >= VC_OBST_CLEAR_MS) {
+				resume(v, o, now);		/* it went away */
+				break;
 			}
-		}
-		break;
-#endif
-		if (v->sub == 0) {				/* WAIT FOR THE SCAN */
+			if (now - v->t_still >= VC_OBST_STILL_MS) {
+				o->scan_request = true;		/* a still object: profile it */
+				v->sub = OB_PROFILE;
+				v->t_sub = now;
+			}
+		} else if (v->sub == OB_PROFILE) {		/* WAIT FOR THE SCAN */
 			if (in->obst) {
 				v->ob = *in->obst;
 				if (!v->ob.found) {
-					go(v, o, VC_CRUISE_SPEED);
-					enter(v, o, VC_LINE_FOLLOW, now);
+					resume(v, o, now);
+				} else if (!VC_OBST_BYPASS) {
+					v->sub = OB_HOLD;
+					v->t_close = now;
 				} else if (v->ob.side == 0) {
-					enter_fault(v, o, FAULT_OBSTACLE, now);
+					no_way(v, o, in, now);
 				} else {
-					v->sub = 1; v->step = 0;
+					v->sub = OB_BYPASS; v->step = 0; v->move_left = 0;
 					v->sp_line_found = false;
-					bypass_step(v, o, 0);
+					avoid_step(v, o, 0);
 				}
-			} else if (now - v->t_state > VC_SCAN_TIMEOUT_MS) {
-				enter_fault(v, o, FAULT_OBSTACLE, now);
+			} else if (now - v->t_sub > VC_SCAN_TIMEOUT_MS) {
+				no_way(v, o, in, now);
 			}
-		} else if (v->sub == 1) {			/* BYPASS: one step at a time */
+		} else if (v->sub == OB_BYPASS) {		/* AVOID, then turn toward the line: one step at a time */
 			if (in->line && in->line->type == LINE_EVT_FOUND && v->step >= 4)
-				v->sp_line_found = true;
+				v->sp_line_found = true;	/* found while turning toward it */
 			if (v->settle > 0) { v->settle--; break; }
 			if (in->motion_done) {
-				if (++v->step < BYPASS_STEPS) {
-					bypass_step(v, o, v->step);
-				} else if (v->sp_line_found) {	/* REJOIN: already back on the line */
-					go(v, o, VC_CRUISE_SPEED);
-					enter(v, o, VC_LINE_FOLLOW, now);
-				} else {			/* SEARCH_LINE */
+				if (v->move_left > 0) {
+					move_part(v, o);	/* the rest of a long MOVE */
+				} else if (++v->step < AVOID_STEPS) {
+					avoid_step(v, o, v->step);
+				} else if (v->sp_line_found) {	/* REJOIN: already on the line */
+					resume(v, o, now);
+				} else {			/* LINE FINDING: creep toward it, heading held */
 					go(v, o, VC_RECOVER_SPEED);
-					v->sub = 2;
+					v->sub = OB_SEARCH;
 					v->t_sub = now;
 				}
 			}
-		} else {					/* SEARCH_LINE */
-			if ((in->line && in->line->type == LINE_EVT_FOUND)) {
-				go(v, o, VC_CRUISE_SPEED);
-				enter(v, o, VC_LINE_FOLLOW, now);
-			} else if (now - v->t_sub > VC_SEARCH_TIMEOUT_MS) {
+		} else if (v->sub == OB_SEARCH) {		/* LINE FINDING: a sensor reaches the line -> follow it */
+			if (in->line && in->line->type == LINE_EVT_FOUND) {
+				resume(v, o, now);
+			} else if (now - v->t_sub > search_ms(v)) {
 				enter_fault(v, o, FAULT_LINE_LOST, now);
+			}
+		} else {					/* HOLD (VC_OBST_BYPASS 0): wait until it has gone */
+			if (in->obstacle_close || in->obstacle_present) {
+				v->t_close = now;
+			} else if (now - v->t_close >= VC_OBST_CLEAR_MS) {
+				resume(v, o, now);
 			}
 		}
 		break;
@@ -315,6 +379,8 @@ void vc_step(vc_t *v, const vc_in_t *in, vc_out_t *o)
 	}
 
 status:
+	/* stopped for an obstacle (watching it or profiling it): the scan task tracks it with the hold distance */
+	o->scan_hold = v->state == VC_OBSTACLE_AVOID && (v->sub == OB_CONFIRM || v->sub == OB_PROFILE || v->sub == OB_HOLD);
 	if (now - v->t_last_status >= VC_STATUS_MS) {
 		v->t_last_status = now;
 		o->send_status = true;

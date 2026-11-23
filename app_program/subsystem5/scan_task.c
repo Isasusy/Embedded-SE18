@@ -2,7 +2,7 @@
  *	scan_task.c -- Obstacle Scan. Owns the servo (GP15) and the ultrasonic sensor (TRIG / ECHO: PIN_US_TRIG / PIN_US_ECHO in drv_scan.h).
  *	WATCH: the servo sweeps continuously left <-> right (SCAN_WATCH_SWEEP_DEG) and pings at every step. An echo inside
  *	the car's path closer than SCAN_CLOSE_MM (two pings in a row at that angle) sets FLG_SCAN_CLOSE, and the servo then
- *	stays pointed at the obstacle until it has gone.
+ *	stays pointed at the obstacle until it has gone; s5_track_mm holds its distance (for the VC's still-object check).
  On FLG_SCAN_REQUEST from the Vehicle Controller: sweep the servo 30..150 deg in 5 deg steps, ping at each, build
  *	the profile, send obstacle_t to the VC and leave the rays in s5_profile for the MQTT telemetry (S1).
  *	APIs shown: tk_dly_tsk, tk_set_flg, tk_wai_flg (polling), tk_clr_flg, tk_snd_mbf
@@ -15,6 +15,7 @@
 
 _Static_assert((SCAN_PROFILE_END_DEG - SCAN_PROFILE_START_DEG) / SCAN_PROFILE_STEP_DEG + 1 <= OBST_PROFILE_MAX_RAYS &&
 	       OBST_PROFILE_MAX_RAYS <= SCAN_MAX_RAYS, "profile sweep has more rays than the buffers hold");
+_Static_assert(SCAN_CLOSE_MM < SCAN_NEAR_MM, "an obstacle that stops the car must also count as near in the profile sweep");
 
 /* Servo angle last commanded (0 = straight ahead, + = left). servo_glide() moves from here one degree at a time, so
    the servo never jumps and does not jolt the sensor or the car. */
@@ -48,6 +49,9 @@ static int ping_median3(void)
 	return b;
 }
 
+/* Distance of the obstacle being tracked (0 = none), for the VC's still-object check. */
+volatile int			s5_track_mm;
+
 /* The last profile, for the telemetry (S1, other core). Seqlock: odd while being written. */
 volatile obstacle_profile_t	s5_profile;
 volatile unsigned		s5_profile_seq;
@@ -67,15 +71,27 @@ static void publish_profile(const int *ang, const int *dist, int n, const obstac
 	s5_profile.ob.left_clear_mm = ob->left_clear_mm;
 	s5_profile.ob.right_clear_mm = ob->right_clear_mm;
 	s5_profile.ob.side = ob->side;
+	s5_profile.ob.left_edge_mm = ob->left_edge_mm;
+	s5_profile.ob.right_edge_mm = ob->right_edge_mm;
+	s5_profile.ob.scan_left_mm = ob->scan_left_mm;
+	s5_profile.ob.scan_right_mm = ob->scan_right_mm;
+	s5_profile.ob.depth_mm = ob->depth_mm;
+	s5_profile.ob.turn_deg = ob->turn_deg;
+	s5_profile.ob.diag_mm = ob->diag_mm;
+	s5_profile.ob.lat_mm = ob->lat_mm;
+	s5_profile.ob.pass_mm = ob->pass_mm;
 	s5_profile.timestamp_ms = s5_now_ms();
 	__asm__ volatile ("dmb" ::: "memory");
 	s5_profile_seq++;				/* even again: a new, complete profile */
 }
 
 /* Profile the obstacle: servo SCAN_PROFILE_START_DEG .. SCAN_PROFILE_END_DEG (30, 35, ... 150) in
-   SCAN_PROFILE_STEP_DEG steps, gliding between them, one ultrasonic reading (median of 3) at each, then analyse, hand
-   the result to the VC and publish the rays for MQTT. */
-static void do_sweep(void)
+   SCAN_PROFILE_STEP_DEG steps, gliding between them, one ultrasonic reading (median of 3) at each, then analyse and
+   publish the rays for MQTT. The servo glides back to back_deg (the obstacle it was tracking) BEFORE the result goes
+   to the VC: if the VC has to watch the obstacle again (no route on the bench) the tracking pings must start at once,
+   not after a glide of up to ~0.7 s that the VC would take for "it has gone". seed_deg = the angle the obstacle was
+   hit at (it stopped the car): the profile grows the obstacle from that ray. */
+static void do_sweep(int back_deg, int seed_deg)
 {
 	int ang[OBST_PROFILE_MAX_RAYS], dist[OBST_PROFILE_MAX_RAYS], n = 0;
 	obstacle_t ob;
@@ -91,24 +107,36 @@ static void do_sweep(void)
 #endif
 		n++;
 	}
-	scan_analyze(ang, dist, n, &ob);
+	scan_analyze_from(ang, dist, n, seed_deg, &ob);
 	publish_profile(ang, dist, n, &ob);
 #if S5_DEBUG_PRINT
-	S5_PRINTF("[S5] scan: found=%d dist=%d width=%d left=%d right=%d side=%d\n", ob.found, (int)ob.distance_mm,
-		  (int)ob.width_mm, (int)ob.left_clear_mm, (int)ob.right_clear_mm, (int)ob.side);
+	S5_PRINTF("[S5] scan (from %d deg): found=%d dist=%d width=%d (edges %d..%d, scanned %d..%d, planned depth %d) left=%d right=%d side=%d\n",
+		  seed_deg, ob.found, (int)ob.distance_mm, (int)ob.width_mm, (int)ob.right_edge_mm, (int)ob.left_edge_mm,
+		  (int)ob.scan_right_mm, (int)ob.scan_left_mm, (int)ob.depth_mm, (int)ob.left_clear_mm, (int)ob.right_clear_mm, (int)ob.side);
+	if (ob.side)
+		S5_PRINTF("[S5] plan: turn %d deg, %d mm until beside it, turn back; then %d mm on, turn %d deg, find the line\n",
+			  (int)ob.turn_deg, (int)ob.diag_mm, (int)ob.pass_mm, -(int)ob.turn_deg);
+	else if (ob.found)
+		S5_PRINTF("[S5] no route: left %d mm free, needs %d; right %d mm free, needs %d (-1 = too wide at any angle)\n",
+			  (int)ob.left_clear_mm, (int)scan_route_need(&ob, +1), (int)ob.right_clear_mm, (int)scan_route_need(&ob, -1));
 #endif
+	servo_glide(back_deg);
 	tk_snd_mbf(mbf_obstacle, &ob, sizeof ob, TMO_POL);
 }
 
-/* two pings at the current servo angle; true if both are an obstacle in the path. *dist gets the smaller valid reading. */
-static bool ping_hit(int ang, int *dist)
+/* two pings at the current servo angle. *close: BOTH are an obstacle in the path closer than SCAN_CLOSE_MM (stop the
+   car). *held: EITHER is in the path closer than SCAN_HOLD_MM (a stopped-for obstacle is still there). *dist gets the
+   smaller valid reading. */
+static void ping_pair(int ang, int *dist, bool *close, bool *held)
 {
 	int a = ultra_ping_mm();
 	tk_dly_tsk(2);
 	int b = ultra_ping_mm();
 	*dist = (a > 0 && (b <= 0 || a < b)) ? a : b;
-	return scan_in_path(ang, a, SCAN_CLOSE_MM, SCAN_PATH_HALF_W_MM) &&
-	       scan_in_path(ang, b, SCAN_CLOSE_MM, SCAN_PATH_HALF_W_MM);
+	*close = scan_in_path(ang, a, SCAN_CLOSE_MM, SCAN_PATH_HALF_W_MM) &&
+		 scan_in_path(ang, b, SCAN_CLOSE_MM, SCAN_PATH_HALF_W_MM);
+	*held = scan_in_path(ang, a, SCAN_HOLD_MM, SCAN_PATH_HALF_W_MM) ||
+		scan_in_path(ang, b, SCAN_HOLD_MM, SCAN_PATH_HALF_W_MM);
 }
 
 void scan_task(INT stacd, void *exinf)
@@ -147,11 +175,12 @@ void scan_task(INT stacd, void *exinf)
 			if (active) {			/* just stopped: park straight ahead, then let go of the servo */
 				active = false;
 				tracking = false;
+				s5_track_mm = 0;
 				ang = lo; dir = +1;
 				no_echo = 0; last_d = 0;
 				servo_glide(SCAN_WATCH_DEG);
 				servo_off();
-				tk_clr_flg(flg_scan, ~(UINT)(FLG_SCAN_CLOSE | FLG_SCAN_REQUEST));
+				tk_clr_flg(flg_scan, ~(UINT)(FLG_SCAN_CLOSE | FLG_SCAN_PRESENT | FLG_SCAN_REQUEST));
 #if S5_ULTRA_PRINT
 				S5_PRINTF("[S5] scan: idle (car stopped)\n");
 #endif
@@ -168,28 +197,35 @@ void scan_task(INT stacd, void *exinf)
 		}
 
 		if (tk_wai_flg(flg_scan, FLG_SCAN_REQUEST, TWF_ORW | TWF_BITCLR, &ptn, TMO_POL) == E_OK) {
-			do_sweep();
-			tk_clr_flg(flg_scan, ~(UINT)FLG_SCAN_CLOSE);
-			servo_glide(tracking ? track_ang : ang);	/* back to the obstacle, or to the watch sweep */
+			do_sweep(tracking ? track_ang : ang, tracking ? track_ang : 0);	/* ends back on the obstacle */
+			tk_clr_flg(flg_scan, ~(UINT)(FLG_SCAN_CLOSE | FLG_SCAN_PRESENT));
 			tk_dly_tsk(SCAN_PERIOD_MS);
 			continue;
 		}
 
 		if (tracking) {
 			int d;
-			if (ping_hit(track_ang, &d)) {
-				tk_set_flg(flg_scan, FLG_SCAN_CLOSE);
+			bool close, held;
+			bool hold = tk_wai_flg(flg_scan, FLG_SCAN_HOLD, TWF_ORW, &ptn, TMO_POL) == E_OK;	/* level */
+			ping_pair(track_ang, &d, &close, &held);
+			if (close || (hold && held)) {		/* still there: close, or (car stopped for it) within the hold */
+				s5_track_mm = d;
+				tk_set_flg(flg_scan, close ? (FLG_SCAN_CLOSE | FLG_SCAN_PRESENT) : FLG_SCAN_PRESENT);
 				clear_pings = 0;
 			} else if (++clear_pings >= SCAN_TRACK_CLEAR_PINGS) {
 				tracking = false;
+				s5_track_mm = 0;
 			}
 			last_d = d;
 			tk_dly_tsk(SCAN_PERIOD_MS);
 		} else {
 			int d;
+			bool close, held;
 			servo_to(ang);
 			tk_dly_tsk(SCAN_WATCH_SETTLE_MS);
-			if (ping_hit(ang, &d)) {
+			ping_pair(ang, &d, &close, &held);
+			if (close) {
+				s5_track_mm = d;
 				tk_set_flg(flg_scan, FLG_SCAN_CLOSE);
 				tracking = true;
 				track_ang = ang;

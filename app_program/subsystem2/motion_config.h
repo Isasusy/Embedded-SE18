@@ -12,7 +12,7 @@
  * MC_TICKS_PER_REV counts the edges the driver decodes per wheel revolution (x4 quadrature on A and B).
  * Calibrate: set S2_DEBUG_PRINT 1, turn one wheel exactly one revolution by hand, read "tick" in the status line. */
 #define MC_WHEEL_DIAM_MM	65.0f
-#define MC_TRACK_MM		130.0f		/* distance between the two wheels' contact points (CALIBRATE) */
+#define MC_TRACK_MM		115.0f		/* distance between the two wheels' contact points (CALIBRATE) */
 #define MC_TICKS_PER_REV	860.0f		/* measured by hand: ~830-890 per revolution (verify with a 1 m push test) */
 
 /* ---- speeds (mm/s) ---- */
@@ -23,7 +23,7 @@
 
 /* ---- wheel speed PI + feed-forward (output in 1/1000 duty, -1000..1000) ---- */
 #define MC_FF_PWM_MIN		120.0f		/* duty needed just to start the wheel turning (dead band) */
-#define MC_FF_PER_MM_S		2.2f		/* duty per mm/s of target speed                           */
+#define MC_FF_PER_MM_S		3.6f		/* duty per mm/s of target speed                           */
 #define MC_KP			1.2f		/* duty per mm/s of speed error                            */
 #define MC_KI			6.0f		/* duty per (mm/s * s)                                     */
 #define MC_INTEG_MAX		300.0f		/* anti-windup clamp on the integral term                  */

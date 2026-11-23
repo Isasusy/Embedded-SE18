@@ -116,7 +116,12 @@ int tm_format_obstacle(char *buf, int cap, const obstacle_profile_t *p, uint32_t
 	put_s(&w, ",\"left_clear_mm\":"); put_i(&w, round_i(p->ob.left_clear_mm));
 	put_s(&w, ",\"right_clear_mm\":"); put_i(&w, round_i(p->ob.right_clear_mm));
 	put_s(&w, ",\"side\":\""); put_s(&w, p->ob.side > 0 ? "LEFT" : (p->ob.side < 0 ? "RIGHT" : "NONE"));
-	put_s(&w, "\",\"t\":"); put_u(&w, p->timestamp_ms);
+	put_s(&w, "\",\"depth_mm\":"); put_i(&w, round_i(p->ob.depth_mm));
+	put_s(&w, ",\"turn_deg\":"); put_i(&w, p->ob.turn_deg);
+	put_s(&w, ",\"diag_mm\":"); put_i(&w, p->ob.diag_mm);
+	put_s(&w, ",\"lat_mm\":"); put_i(&w, p->ob.lat_mm);
+	put_s(&w, ",\"pass_mm\":"); put_i(&w, p->ob.pass_mm);
+	put_s(&w, ",\"t\":"); put_u(&w, p->timestamp_ms);
 	put_c(&w, '}');
 	return finish(&w);
 }

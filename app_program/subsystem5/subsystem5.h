@@ -39,8 +39,13 @@ IMPORT ID	mbf_status;
 #define FLG_SCAN_CLOSE		0x2		/* scan_task -> VC: something close ahead   */
 #define FLG_SCAN_RUN		0x4		/* VC -> scan_task: level, set while the car is running (start/stop
 						   button or MQTT START); clear = servo parked and released, no pings */
+#define FLG_SCAN_PRESENT	0x8		/* scan_task -> VC: the tracked obstacle is still there (SCAN_HOLD_MM) */
+#define FLG_SCAN_HOLD		0x10		/* VC -> scan_task: level, set while the car is stopped for an obstacle
+						   (confirming, profiling, holding): keep tracking it out to SCAN_HOLD_MM */
 IMPORT ID	flg_scan;
 IMPORT ID	mbf_obstacle;			/* scan_task -> VC: obstacle_t, depth 2     */
+IMPORT volatile int	s5_track_mm;		/* scan_task -> VC: distance of the obstacle it is tracking, 0 = none
+						   (one aligned word: read and written whole, no lock needed) */
 
 IMPORT void	vc_task(INT stacd, void *exinf);
 IMPORT void	scan_task(INT stacd, void *exinf);

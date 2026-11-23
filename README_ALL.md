@@ -41,7 +41,7 @@ All cross-subsystem calls use `TMO_POL`: nothing waits for another subsystem.
 * **Priorities**: the TEAM.md bands make S1 highest and S5 lowest (the opposite of the design doc, where Motion Control is highest). It works because every task sleeps between periods, but a
   stop takes IMU 10 ms + VC tick 20 ms + S2 10 ms, up to about 40 ms against the 50 ms NFR6. If you can, give `vc_task` a better priority by team agreement.
 * **Steering sign**: `line_status_t.steering_corr` in mm/s of wheel-speed difference, + = steer left (S2 and S3 both follow it).
-* **Obstacle bypass** uses a fixed obstacle depth (`VC_OBST_DEPTH_MM`, the ultrasonic sensor cannot measure it) and a 7-step turn / move sequence; tune the dimensions on the track.
+* **Obstacle bypass**: the car stops, waits `VC_OBST_STILL_MS` (5 s) for the obstacle to stay at a steady distance (it drives on if it goes away), profiles it, and goes round the more open side: it turns by an angle planned from the obstacle's width, drives until it is beside the obstacle, turns back, then finds the line again (past the obstacle, turn toward the line, creep until a sensor sees it) and follows it. The ultrasonic sensor cannot measure depth, so depth is assumed equal to the measured width. Calibrate `SCAN_BEAM_HALF_DEG` and the robot dimensions on the track.
 * **Hump slow-down**: the IMU reports a hump only after it ends, so the VC slows when the IMU says CLIMBING and speeds up on the HUMP event.
 * **Line lost**: RECOVER drives slowly straight; there is no sweep search (add one in `vc_logic.c` if the track needs it).
   With `LINE_STRADDLE 1` (sensors outside the line, the current setting) S3 can never tell "lost" from "centred" (both white), so it never

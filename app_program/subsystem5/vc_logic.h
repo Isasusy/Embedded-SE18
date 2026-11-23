@@ -3,6 +3,9 @@
  *	No kernel or hardware calls: one vc_step() per 20 ms tick, testable on a PC.
  *
  *	A barcode is remembered; its turn is made at the NEXT JUNCTION (drive VC_JUNCTION_ADVANCE_MM, then turn).
+ *	An obstacle: STOP, CONFIRM it stays (VC_OBST_STILL_MS at a steady distance; it going away = drive on), PROFILE it
+ *	with a servo sweep, AVOID it on the more open side (turn by an angle planned from its width, drive until beside it,
+ *	turn back), then LINE FINDING (past it, turn toward the line, creep until found) -> LINE_FOLLOW.
  *	INIT -> IDLE -> LINE_FOLLOW <-> BARCODE_ACTION / HUMP_CROSSING / OBSTACLE_AVOID / RECOVER
  *	-> COMPLETE; FAULT from anywhere. A stop or reset can arrive in any state and takes priority.
  */
@@ -13,6 +16,9 @@
 #include "../subsystem2/motion_msgs.h"
 #include "../subsystem4/imu_msgs.h"
 
+/* OBSTACLE_AVOID sub-states (vc_t.sub) */
+enum { OB_CONFIRM, OB_PROFILE, OB_BYPASS, OB_SEARCH, OB_HOLD };
+
 typedef struct {
 	/* private */
 	vc_state_t	state;
@@ -21,8 +27,12 @@ typedef struct {
 	float		max_hump_mm;
 	int		speed_cmd;
 	int		step, settle;			/* OBSTACLE_AVOID sequence position, settle ticks */
+	int		move_left;			/* OBSTACLE_AVOID: mm of the current MOVE still to send (VC_MOVE_MAX_MM pieces) */
 	int		sub;
 	obstacle_t	ob;
+	uint32_t	t_close;			/* OBSTACLE_AVOID: last tick the obstacle was seen close */
+	uint32_t	t_still;			/* OBSTACLE_AVOID: start of the current steady-distance stretch */
+	int		still_min, still_max;		/* tracked distance band of that stretch (0 = none yet) */
 	bool		started, sp_line_found;
 	bool		bench_restart;			/* bench: drive on again after an automatic reset */
 	bool		nav_has;			/* a barcode command is waiting for the next junction */
@@ -42,6 +52,8 @@ typedef struct {
 	bool	motion_done;				/* motion_status_t.cmd_done */
 	bool	motion_fault;				/* FLG_MOTION_FAULT seen */
 	bool	obstacle_close;				/* scan task saw something close ahead */
+	int	obstacle_mm;				/* distance the scan task is tracking, <= 0 = not tracking */
+	bool	obstacle_present;			/* scan task: the obstacle it tracks is still there (SCAN_HOLD_MM) */
 	bool	all_ready;				/* S2, S3, S4 reported READY */
 	bool	all_alive;				/* S2, S3, S4 each set ALIVE since the last tick */
 	int	speed_mm_s;				/* measured speed, for the status report */
@@ -53,6 +65,7 @@ typedef struct {
 	bool		stop_set;			/* set FLG_MOTION_STOP and hold it */
 	bool		stop_clear_reset;		/* clear STOP, then set FLG_MOTION_RESET and FLG_IMU_RESET */
 	bool		scan_request;
+	bool		scan_hold;			/* the car is stopped for an obstacle: track it out to SCAN_HOLD_MM */
 	bool		send_status;
 	robot_status_t	status;
 	bool		feed_watchdog;

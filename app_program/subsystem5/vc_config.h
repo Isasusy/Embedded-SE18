@@ -6,8 +6,8 @@
 
 #define VC_TICK_MS		20		/* event-driven plus 20 ms tick (task table) */
 /* 1 = BENCH LINE FOLLOW: creep along the line at VC_BENCH_SPEED, continuously, and do nothing else: barcodes, junctions,
-   humps and the IMU are ignored (barcodes still work if VC_BENCH_BARCODES is 1). The car stops only for: an OBSTACLE seen by the ultrasonic sensor (it stops, sweeps the
-   servo left/centre/right, prints the profile, and drives on again when the way has been clear for VC_BENCH_CLEAR_MS),
+   humps and the IMU are ignored (barcodes still work if VC_BENCH_BARCODES is 1). The car stops only for: an OBSTACLE seen by the ultrasonic sensor (it stops,
+   drives on if the way clears within VC_OBST_STILL_MS, else profiles it and goes round it: see VC_OBST_BYPASS),
    a remote STOP, a stalled wheel or a dead subsystem. 0 = the full mission (set 0 at integration). */
 #ifndef VC_BENCH_LINE_ONLY
 #define VC_BENCH_LINE_ONLY	1
@@ -15,7 +15,6 @@
 #define VC_BENCH_BARCODES	1		/* bench: still act on barcodes: remember one, turn at the next junction */
 #define VC_BENCH_SPEED		90		/* mm/s: slow and steady */
 #define VC_BENCH_RETRY_MS	1500		/* bench: after a stalled-wheel fault, reset and drive on again after this long */
-#define VC_BENCH_CLEAR_MS	800		/* bench: after an obstacle stop, resume once nothing has been close for this long */
 #if VC_BENCH_LINE_ONLY
 #define VC_CRUISE_SPEED		VC_BENCH_SPEED
 #else
@@ -35,18 +34,30 @@
 #define VC_RECOVER_TIMEOUT_MS	4000
 #define VC_HUMP_TIMEOUT_MS	6000
 #define VC_SCAN_TIMEOUT_MS	9000
-#define VC_SEARCH_TIMEOUT_MS	5000
 #define VC_STATUS_MS		500		/* NFR5: telemetry at 2 Hz */
 #define VC_SETTLE_TICKS		2		/* ignore cmd_done this long after sending a manoeuvre */
 
+/* ---- obstacle handling: STOP -> CONFIRM (still?) -> PROFILE sweep -> BYPASS -> rejoin the line ---- */
+#ifndef VC_OBST_BYPASS
+#define VC_OBST_BYPASS		1		/* 1 = go round a still obstacle (bench and mission). 0 = profile it, then
+						   only wait until it has gone (the old bench behaviour) */
+#endif
+#define VC_OBST_STILL_MS	5000		/* an obstacle must stay in front, at a steady distance, this long before the
+						   car profiles it and goes round it */
+#define VC_OBST_STILL_TOL_MM	40		/* "steady": tracked distance stays within this band (else the 5 s restart) */
+#define VC_OBST_CLEAR_MS	800		/* nothing close for this long while stopped = it has gone: drive on */
+
 /* ---- obstacle bypass geometry (CALIBRATE on the robot) ---- */
-#define VC_ROBOT_HALF_W_MM	80
-#define VC_SIDE_MARGIN_MM	40
-#define VC_OBST_DEPTH_MM	200		/* the ultrasonic sensor cannot measure depth: assumed from the track briefing */
-#define VC_ROBOT_LEN_MM		150
+#define VC_ROBOT_HALF_W_MM	100		/* half the car's width */
+#define VC_ROBOT_LEN_MM		180		/* the car's length, front to back (rear overhang = this - VC_SENSOR_AHEAD_MM) */
+#define VC_SENSOR_AHEAD_MM	70		/* wheel axle (turning centre) to the ultrasonic sensor at the front (CALIBRATE) */
+#define VC_AVOID_MAX_DEG	75		/* steepest avoidance turn */
+#define VC_REJOIN_EXTRA_MM	150		/* line finding: creep this much further than the way back before giving up */
+#define VC_MOVE_MAX_MM		500		/* a longer avoidance MOVE is sent in pieces, so each one finishes well within
+						   S2's MC_CMD_TIMEOUT_MS at VC_CRUISE_SPEED */
 
 /* ---- hardware watchdog (NFR10: 500 ms) ---- */
-#define VC_WATCHDOG_ENABLE	0		/* 1 at integration; 0 on the bench so a stand-alone S5 does not reset */
+#define VC_WATCHDOG_ENABLE	1		/* 1 at integration; 0 on the bench so a stand-alone S5 does not reset */
 #define VC_WATCHDOG_MS		500
 
 /* ---- bench start: no MQTT needed ----
@@ -65,11 +76,16 @@
 /* 1 = the mission needs a working IMU (normal). 0 = BENCH ONLY: ignore the IMU's READY/ALIVE so the motors and line
    sensors can be tested while the IMU is not wired yet. The robot then has no impact stop and no hump detection. */
 #ifndef VC_REQUIRE_IMU
-#define VC_REQUIRE_IMU		0
+#define VC_REQUIRE_IMU		1
 #endif
 
 #define SCAN_PERIOD_MS		60		/* ping period while WATCHing (task table: 60 ms per ping) */
-#define SCAN_CLOSE_MM		200		/* WATCH: closer than this twice in a row = obstacle close = STOP (adjust) */
+#define SCAN_CLOSE_MM		200		/* WATCH: closer than this twice in a row = obstacle close = STOP (adjust; keep below SCAN_NEAR_MM) */
+#define SCAN_HOLD_PCT		120		/* while the car is STOPPED for an obstacle it still counts as there out to this %
+						   of SCAN_CLOSE_MM, on either of the two pings. Hysteresis: an obstacle that stopped
+						   the car right at SCAN_CLOSE_MM must not flicker out of it (noise, a weak echo off
+						   its edge) and make the car think it has gone and drive into it */
+#define SCAN_HOLD_MM		(SCAN_CLOSE_MM * SCAN_HOLD_PCT / 100)
 #define SCAN_WATCH_DEG		0		/* centre of the watch sweep: 0 = straight ahead, + = left (adjust) */
 #define SCAN_WATCH_SWEEP_DEG	30		/* WATCH: the servo sweeps continuously from centre-this to centre+this (0 = fixed, no sweep) */
 #define SCAN_WATCH_STEP_DEG	5		/* ... in steps of this many degrees */
@@ -77,7 +93,16 @@
 #define SCAN_PATH_HALF_W_MM	120		/* an echo only counts as an obstacle if it is within this sideways distance of the path */
 #define SCAN_TRACK_CLEAR_PINGS	4		/* after a hit the servo stays on the obstacle until this many clear pings in a row */
 #define SCAN_NEAR_MM		400		/* a ray shorter than this belongs to the obstacle */
-#define SCAN_MIN_CLEAR_MM	150		/* a side narrower than this cannot be used */
+#define SCAN_SIDE_TIE_MM	30		/* sides this close in free space count as equal: take the shorter detour */
+#define SCAN_BEAM_HALF_DEG	7		/* HC-SR04 beam half-width: each edge is pulled in by this (CALIBRATE: measure a
+						   known box; 0 = no correction) */
+#ifndef SCAN_PLAN_WIDTH_PCT
+#define SCAN_PLAN_WIDTH_PCT	200		/* clearance: the route is planned round an obstacle this % of the measured
+						   width, centred on it, with the same depth (no fixed margins): 200 = half
+						   its width clear on each side and a full width behind it */
+#endif
+#define SCAN_DEPTH_MIN_MM	80		/* planned depth (= planned width) is clamped to this range */
+#define SCAN_DEPTH_MAX_MM	400
 /* PROFILE sweep (after the car has stopped for an obstacle). Angles are ABSOLUTE servo degrees, SCAN_SERVO_CENTRE_DEG
    = straight ahead, so 30..150 is 60 degrees either side. Below the centre = the robot's right, above = its left. */
 #define SCAN_SERVO_CENTRE_DEG	90
