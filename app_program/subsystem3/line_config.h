@@ -32,9 +32,19 @@
    LINE_STEER_HOLD_*: when the sensor leaves the line again, keep steering the same way for a moment, fading out,
    so a curve is followed smoothly instead of going straight the instant the sensor goes white. */
 #define LINE_STEER_ENGAGE	0.25f		/* a sensor reading above this (0 white .. 1 black) counts as touching the line for steering */
-#define LINE_STEER_MIN		110.0f
-#define LINE_STEER_HOLD_MS	200
-#define LINE_STEER_HOLD_GAIN	0.7f		/* hold this fraction of the last steer, fading to 0 over LINE_STEER_HOLD_MS */
+/* Ramped steering (23 Nov: the car over-corrected and weaved after every drift). While ONE sensor touches the line the
+   correction starts gentle and grows with the time it has been touching: a small drift is corrected softly and released
+   before it overshoots; on a curve the sensor stays on the line and the steer builds up to LINE_STEER_MAX.
+   The build-up fades (LINE_STEER_DECAY) rather than resets while both sensors are white, so a curve that touches the
+   line again and again keeps its steer. All times are REAL ms (the task runs every 10-20 ms, not LINE_PERIOD_MS). */
+#define LINE_STEER_START	40.0f		/* mm/s of wheel-speed difference the moment a sensor touches the line */
+#define LINE_STEER_RAMP		600.0f		/* ... growing by this many mm/s per second while it stays on the line */
+#define LINE_STEER_MAX		180.0f		/* ... up to this (keep below MC_STEER_MAX 200) */
+#define LINE_STEER_DECAY	2.0f		/* the build-up time fades this many times faster than it grew, when both are white */
+#define LINE_STEER_MIN		LINE_STEER_START	/* (old name) */
+#define LINE_STEER_HOLD_MS	120
+#define LINE_STEER_HOLD_GAIN	0.3f		/* after the sensor leaves the line keep this fraction of the steer, fading to 0
+						   over LINE_STEER_HOLD_MS (was 0.7 / 200 "5 ms" samples = 0.4-0.8 s real) */
 #define LINE_FOUND_QUIET_MS	100		/* both white this long before a black sensor counts as "line found" */
 #define LINE_FOUND_HOLDOFF_MS	500		/* at most one LINE_FOUND per this time */
 

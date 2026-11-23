@@ -38,6 +38,7 @@ typedef struct {
 	float		man_h0, man_angle;	/* TURN / U_TURN start heading and signed angle */
 	float		man_d0, man_dist, man_speed;
 	unsigned	man_cycles;
+	float		man_ms;			/* real time spent on the current manoeuvre (timeout) */
 	unsigned	stall_l, stall_r;
 	int		pwm_l, pwm_r;
 	mc_fault_t	fault;
@@ -51,6 +52,10 @@ typedef struct {
 	float		steer_mm_s;		/* line_status_t.steering_corr                                */
 	bool		stop_bit;		/* FLG_MOTION_STOP currently set                              */
 	bool		reset;			/* FLG_MOTION_RESET currently set                             */
+	float		dt_s;			/* ADDED: real time since the last call, s (0 = MC_PERIOD_MS).
+						   The kernel tick is 10 ms, so the "10 ms" loop really runs every
+						   10-20 ms; dividing by a fixed 10 ms read the speed up to 2x too
+						   high and the PI starved the motors (jerky, uneven wheels). */
 } mc_in_t;
 
 typedef struct {

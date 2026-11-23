@@ -58,10 +58,16 @@ void line_task(INT stacd, void *exinf)
 
 	la_init(&a);
 	s_next_us = S3_US32();
+	uint32_t t_prev = S3_US32();
 
 	for (;;) {
 		line_adc_read(&l, &r);
-		la_step(&a, l, r, &o);
+		/* real time since the last sample: with the 10 ms kernel tick this "5 ms" loop runs every 10-20 ms, and the
+		   steering ramp / hold / junction timers must count real time, not samples */
+		uint32_t t_now = S3_US32();
+		unsigned dt_ms = (unsigned)((uint32_t)(t_now - t_prev) + 500u) / 1000u;
+		t_prev = t_now;
+		la_step_dt(&a, l, r, dt_ms ? dt_ms : 1u, &o);
 
 		static bool ready_sent;
 		if (o.ready && !ready_sent) {
@@ -89,7 +95,7 @@ void line_task(INT stacd, void *exinf)
 			static int lift_ms;
 			static bool lifted;
 			bool now_up = l > LINE_LIFTED_ADC && r > LINE_LIFTED_ADC;
-			lift_ms = (now_up != lifted) ? lift_ms + LINE_PERIOD_MS : 0;
+			lift_ms = (now_up != lifted) ? lift_ms + (int)(dt_ms ? dt_ms : 1u) : 0;	/* real ms */
 			if (lift_ms >= LINE_LIFTED_MS) {
 				lift_ms = 0;
 				lifted = now_up;

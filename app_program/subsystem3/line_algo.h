@@ -21,6 +21,8 @@ typedef struct {
 	bool	cal_ok;
 	float	hold_corr;			/* last steer, held (fading) after the sensor leaves the line */
 	unsigned hold_ms;
+	float	eng_ms;				/* ramped steering: how long the line has been under one sensor (fading) */
+	int	eng_dir;			/* +1 / -1: which way that steer goes, 0 = none yet */
 } la_t;
 
 typedef struct {
@@ -33,5 +35,8 @@ typedef struct {
 
 void la_init(la_t *a);
 void la_step(la_t *a, int raw_l, int raw_r, la_out_t *out);	/* LINE_PERIOD_MS per call */
+/* the same with the REAL time since the last call: line_task runs every 10-20 ms (kernel tick 10 ms), not every
+   LINE_PERIOD_MS, and every timer in here (calibration, junction, hold, ramp) must count real time */
+void la_step_dt(la_t *a, int raw_l, int raw_r, unsigned dt_ms, la_out_t *out);
 
 #endif

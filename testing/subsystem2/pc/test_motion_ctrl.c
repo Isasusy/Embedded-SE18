@@ -70,6 +70,24 @@ static void send(sim_t *s, motion_cmd_type_t t, int speed, int ang, int dist)
 	tick(s, &c, false, false, false, 0);
 }
 
+/* the robot's real loop: the kernel tick is 10 ms, so motion_task runs every 20 ms. The plant runs plant_steps x 10 ms
+   between controller calls; give_dt = pass the real time (the fix) or 0 (the old fixed-10 ms assumption). */
+static void tick_slow(sim_t *s, const motion_cmd_t *cmd, int plant_steps, bool give_dt)
+{
+	s->in.cmd = cmd; s->in.stop_bit = false; s->in.reset = false; s->in.line_valid = false; s->in.steer_mm_s = 0;
+	s->in.dt_s = give_dt ? 0.010f * (float)plant_steps : 0.0f;
+	mc_step(&s->mc, &s->in, &s->out);
+	int tl = 0, tr = 0;
+	for (int k = 0; k < plant_steps; k++) {
+		float dl0 = s->l.dist, dr0 = s->r.dist;
+		tl += wheel_ticks(&s->l, s->out.pwm_l, s->gain_l, s->dead, s->tau, s->frozen);
+		tr += wheel_ticks(&s->r, s->out.pwm_r, s->gain_r, s->dead, s->tau, s->frozen);
+		s->heading_true += (s->r.dist - dr0 - (s->l.dist - dl0)) / s->track_true * 180.0f / PI;
+		s->t_ms += 10;
+	}
+	s->in.dticks_l = tl; s->in.dticks_r = tr;
+}
+
 static void run_until_done(sim_t *s, int max_ms)
 {
 	for (int i = 0; i < max_ms / 10 && !s->out.status.cmd_done && s->out.state != MC_ST_FAULT_STOP; i++)
@@ -216,6 +234,24 @@ int main(void)
 	sim_init(&s);
 	send(&s, MOTION_CMD_TURN, 0, 0, 0);
 	CHECK(s.out.status.cmd_done && s.out.state == MC_ST_STOPPED, "TURN 0 done immediately");
+
+	/* 16. the loop really runs every 20 ms (kernel tick 10 ms, 23 Nov): with the fixed 10 ms the speed read 2x too high,
+	   the PI cut the power below the dead band and the car crawled and jerked. With the real dt it holds speed. */
+	for (int fix = 0; fix < 2; fix++) {
+		sim_init(&s);
+		motion_cmd_t go = { MOTION_CMD_GO, 100, 0, 0 };
+		tick_slow(&s, &go, 2, fix);
+		for (int i = 0; i < 100; i++) tick_slow(&s, NULL, 2, fix);		/* 2 s to settle */
+		float d0 = 0.5f * (s.l.dist + s.r.dist);
+		for (int i = 0; i < 100; i++) tick_slow(&s, NULL, 2, fix);		/* 2 s measured */
+		float real = (0.5f * (s.l.dist + s.r.dist) - d0) / 2.0f;
+		if (fix) {
+			CHECK(fabsf(real - 100.0f) < 12.0f, "20 ms loop + real dt: drives %.0f mm/s for 100", real);
+			CHECK(fabsf(s.out.status.speed_l - real) < 20.0f, "  and reports %.0f mm/s (real %.0f)", (float)s.out.status.speed_l, real);
+		} else {
+			CHECK(real < 75.0f, "20 ms loop, fixed 10 ms (old): only %.0f mm/s for 100 (reproduces the robot)", real);
+		}
+	}
 
 	/* 15. tyre scrub (obstacle avoidance turned too little, 23 Nov): on the spot the car turns as if its track were 25%
 	   wider than MC_TRACK_MM. Uncalibrated, a 48 deg avoidance turn falls well short. The dashboard's spin test (TURN 360,

@@ -79,3 +79,11 @@ the EFFECTIVE one (wider than the measured 115 mm). The avoidance plan was right
   Repeat until a spin ends on the mark, then put the value in `MC_TRACK_MM` so it survives a reboot.
 * PC test 15 in testing/subsystem2/pc: with 25 % scrub a 48 deg TURN really turns < 42 deg; after the spin-test
   correction it turns 48 +- 4 deg.
+
+## Jerky / uneven driving (23 Nov)
+* motion_task now runs on **core 1** (TP_PRC2). On core 0 it shared the CPU with the kernel's WiFi service task
+  (priority 4, polls every 2 ms) and was held up for up to 147 ms whenever WiFi / MQTT was busy: the wheels kept
+  their old power, then the PI over-corrected (the logs showed reverse power while driving forward). enc_task and the
+  encoder interrupt stay on core 0.
+* The speed and the PI integral use the measured loop time (`mc_in_t.dt_s`) instead of a fixed 10 ms: the kernel tick
+  is 10 ms, so the loop really runs every 10-20 ms and the old speed read up to 2x too high (PC test 16).

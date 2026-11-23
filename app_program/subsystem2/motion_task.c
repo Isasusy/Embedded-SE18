@@ -101,6 +101,7 @@ void motion_task(INT stacd, void *exinf)
 
 	tk_set_flg(flg_motion, FLG_MOTION_READY);
 	period_start();
+	uint32_t t_enc = S2_US32();		/* when the encoders were last read */
 
 	for (;;) {
 		uint32_t t0 = S2_US32();
@@ -111,6 +112,9 @@ void motion_task(INT stacd, void *exinf)
 		in.dticks_r = (int)(enc_r - last_r);
 		last_l = enc_l;
 		last_r = enc_r;
+		/* the real time those edges took: the kernel tick is 10 ms, so the loop runs every 10-20 ms, not 10 */
+		in.dt_s = (float)(uint32_t)(t0 - t_enc) * 1e-6f;
+		t_enc = t0;
 
 		/* 2. STOP / RESET bits, read without clearing (STOP is level-sensitive) */
 		UINT ptn = 0;

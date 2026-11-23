@@ -108,3 +108,15 @@ directions; the 43-stripe floor-noise read stays rejected; 400 synthetic codes w
 first `*`) all decode. Trade-off: on random junk that happens to have exactly 29 or 39 stripes, 95 in 20000 (0.5 %)
 now come out as a command, against 3 in 20000 with `BAR_ALLOW_BAD_GUARD 0`. Set it to 0 if a wrong turn is worse than a
 missed one.
+
+## Weaving after a drift (23 Nov)
+* Ramped steering: when one sensor touches the line the correction starts at `LINE_STEER_START` (40 mm/s) and grows by
+  `LINE_STEER_RAMP` (600 mm/s per s) up to `LINE_STEER_MAX` (180) while it stays on the line; the build-up fades
+  (`LINE_STEER_DECAY`) while both sensors are white. Was: at least 110 mm/s at once (240 x offset), plus 70 % held after
+  the sensor left the line - the car was already pointing back and overshot to the other side.
+* All timers count REAL ms (`la_step_dt`, measured in line_task): the "5 ms" task runs every 10-20 ms (10 ms kernel
+  tick), so the old 200 ms hold really lasted 0.4-0.8 s. Hold is now 30 % for 120 ms.
+* `testing/subsystem3/pc`: `make sim` = closed-loop simulation (drift 6 / 12 deg, 350 / 250 mm curves, motor dead band,
+  130 ms task stalls); `make sim_old OLD_S3=<dir with the original line_algo.*>` runs the original for comparison.
+* Tune on the car: weaving on straights -> lower `LINE_STEER_START` / `LINE_STEER_RAMP`; running wide on curves ->
+  raise `LINE_STEER_RAMP` / `LINE_STEER_MAX`.
