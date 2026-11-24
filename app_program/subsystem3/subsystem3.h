@@ -21,6 +21,8 @@ IMPORT line_status_t	app_line;
 /* IF-16  S3 <-> Vehicle Controller : event flag flg_line (owned by S3) */
 #define FLG_LINE_READY		0x1		/* calibration finished */
 #define FLG_LINE_ALIVE		0x2		/* set every 5 ms; VC checks and clears it (NFR10) */
+#define FLG_LINE_LIFTED		0x4		/* ADDED: set while both line sensors see no floor (car picked up,
+						   LINE_LIFTED_ADC / LINE_LIFTED_MS); cleared when back down. VC only reads it. */
 IMPORT ID		flg_line;
 
 /* IF-12 / IF-13: S3 only SENDS to these message buffers (owned by the Vehicle Controller, S5).

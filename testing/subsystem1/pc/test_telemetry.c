@@ -6,11 +6,11 @@ static int fails, checks;
 int main(void)
 {
 	char b[160];
-	robot_status_t s = { VC_LINE_FOLLOW, 148, 22.34f, FAULT_NONE, 123456 };
+	robot_status_t s = { VC_LINE_FOLLOW, 148, 22.34f, FAULT_NONE, 123456, 0 };
 	int n = tm_format_status(b, sizeof b, &s);
 	CHECK(n == (int)strlen(b), "length matches");
 	CHECK(!strcmp(b, "{\"state\":\"LINE_FOLLOW\",\"speed\":148,\"max_hump_mm\":22.3,\"fault\":\"NONE\",\"t\":123456}"), "status JSON: %s", b);
-	s = (robot_status_t){ VC_FAULT, -20, 0.04f, FAULT_IMPACT, 0 };
+	s = (robot_status_t){ VC_FAULT, -20, 0.04f, FAULT_IMPACT, 0, 0 };
 	tm_format_status(b, sizeof b, &s);
 	CHECK(strstr(b, "\"speed\":-20") && strstr(b, "\"max_hump_mm\":0.0") && strstr(b, "IMPACT") && strstr(b, "FAULT"), "fault JSON: %s", b);
 	CHECK(tm_format_status(b, 20, &s) == -1, "too small buffer -> -1");
@@ -24,6 +24,41 @@ int main(void)
 	CHECK(tm_parse_cmd("{\"cmd\":\"STOP\"}", 14) == REMOTE_STOP, "json stop");
 	CHECK(tm_parse_cmd("", 0) == -1 && tm_parse_cmd(0, 5) == -1, "empty ignored");
 	CHECK(!strcmp(tm_state_name(99), "UNKNOWN") && !strcmp(tm_fault_name(-1), "UNKNOWN"), "out of range names");
+	/* turn calibration */
+	CHECK(tm_parse_cmd("spin", 4) == REMOTE_SPIN && tm_parse_cmd("spin stop", 9) == -1, "spin command");
+	{
+		float t = 0;
+		CHECK(tm_parse_cal("cal track=138", 13, &t) == 1 && t == 138.0f, "cal track=138 (%.1f)", t);
+		CHECK(tm_parse_cal("CAL TRACK=143.57", 16, &t) == 1 && t > 143.49f && t < 143.51f, "decimals to tenths (%.2f)", t);
+		CHECK(tm_parse_cal("cal track=", 10, &t) == -1 && tm_parse_cal("cal track=12x", 13, &t) == -1 &&
+		      tm_parse_cal("start", 5, &t) == -1 && tm_parse_cal("cal speed=100", 13, &t) == -1, "bad cal rejected");
+		CHECK(tm_format_config(b, sizeof b, 138.5f) > 0 && !strcmp(b, "{\"track_mm\":138.5}"), "config JSON: %s", b);
+	}
+	/* INIT lists what it waits for */
+	s = (robot_status_t){ VC_INIT, 0, 0.0f, FAULT_NONE, 500, VC_WAIT_IMU | VC_WAIT_NET };
+	tm_format_status(b, sizeof b, &s);
+	CHECK(strstr(b, "\"state\":\"INIT\"") && strstr(b, ",\"waiting\":[\"IMU\",\"WIFI\"]}"), "INIT waiting JSON: %s", b);
+	/* barcode direction table */
+	{
+		char ch[8]; int nv[8];
+		int k = tm_parse_map("map A=LEFT b=right, C=U-TURN 7=STOP E=none", 42, ch, nv, 8);
+		CHECK(k == 5 && ch[0] == 'A' && nv[0] == NAV_LEFT && ch[1] == 'B' && nv[1] == NAV_RIGHT && nv[2] == NAV_UTURN &&
+		      ch[3] == '7' && nv[3] == NAV_STOP && ch[4] == 'E' && nv[4] == -1, "map parsed (k=%d)", k);
+		CHECK(tm_parse_map("start", 5, ch, nv, 8) == -1 && tm_parse_map("stop", 4, ch, nv, 8) == -1, "start/stop are not maps");
+		CHECK(tm_parse_map("map A=SIDEWAYS", 14, ch, nv, 8) == -1 && tm_parse_map("map", 3, ch, nv, 8) == -1 &&
+		      tm_parse_map("map A=LEFT B", 12, ch, nv, 8) == -1 && tm_parse_map("maple A=LEFT", 12, ch, nv, 8) == -1,
+		      "bad maps rejected");
+		CHECK(tm_parse_cmd("map A=STOP", 10) == REMOTE_STOP, "(the map command contains STOP: S1 must try the map first)");
+		int8_t tab[TM_MAP_N];
+		for (int i = 0; i < TM_MAP_N; i++) tab[i] = -1;
+		tab[0] = NAV_LEFT; tab[3] = NAV_UTURN; tab[26 + 7] = NAV_STOP;
+		CHECK(tm_format_map(b, sizeof b, tab) > 0 && !strcmp(b, "{\"A\":\"LEFT\",\"D\":\"UTURN\",\"7\":\"STOP\"}"), "map JSON: %s", b);
+	}
+	CHECK(tm_format_hump(b, sizeof b, 2, 18.44f, 22.3f, 9000) > 0 &&
+	      !strcmp(b, "{\"n\":2,\"peak_mm\":18.4,\"max_hump_mm\":22.3,\"t\":9000}"), "hump JSON: %s", b);
+	CHECK(tm_format_hump(b, 20, 2, 18.4f, 22.3f, 9000) == -1, "hump: too small buffer -> -1");
+	CHECK(!strcmp(tm_fault_name(FAULT_TILT), "TILT") && !strcmp(tm_fault_name(FAULT_LIFTED), "LIFTED") &&
+	      !strcmp(tm_fault_name(FAULT_LIFTED + 1), "UNKNOWN"), "tilt / lifted fault names");
 	/* status names match the VC's enum order */
 	for (int i = VC_INIT; i <= VC_FAULT; i++) CHECK(strcmp(tm_state_name(i), "UNKNOWN") != 0, "state %d named", i);
 	/* obstacle profile JSON */

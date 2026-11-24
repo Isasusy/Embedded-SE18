@@ -67,3 +67,23 @@ TEAM_subsystem2.md       rows to paste into TEAM.md
 * All files compile warning-free against stub headers copying the real kernel signatures, and the subsystem links and runs alone on a PC against a fake kernel.
 * **Never built for the Pico or against the course template, never driven on a real robot.** I only had `subsystem2.c` / `.h` from the template, not `app.h`,
   `app_main.c` or the build files. The PC motor model is mine, so the real gains will need tuning.
+
+## Turn calibration (23 Nov): the car turned too little to clear obstacles
+Turns (TURN, U-turn, obstacle avoidance) are measured with the wheel encoders only: heading += (dr - dl) / track.
+Spinning on the spot, the tyres scrub, so the car really turns LESS than the encoders say unless the track used is
+the EFFECTIVE one (wider than the measured 115 mm). The avoidance plan was right; the turns fell short.
+* `mc_track_mm` (motion_ctrl.h) is the track in use, starting at `MC_TRACK_MM`. It can be set over MQTT:
+  `cal track=138` on robot/se18/cmd; the robot reports it on robot/se18/config `{"track_mm":138.0}`.
+* Dashboard, Turn calibration: mark the floor at the car's nose, press **Spin 360°** (robot IDLE; sends `spin`, the
+  controller commands TURN 360), enter how far it really turned, **Apply correction** (new = old x 360 / real).
+  Repeat until a spin ends on the mark, then put the value in `MC_TRACK_MM` so it survives a reboot.
+* PC test 15 in testing/subsystem2/pc: with 25 % scrub a 48 deg TURN really turns < 42 deg; after the spin-test
+  correction it turns 48 +- 4 deg.
+
+## Jerky / uneven driving (23 Nov)
+* motion_task now runs on **core 1** (TP_PRC2). On core 0 it shared the CPU with the kernel's WiFi service task
+  (priority 4, polls every 2 ms) and was held up for up to 147 ms whenever WiFi / MQTT was busy: the wheels kept
+  their old power, then the PI over-corrected (the logs showed reverse power while driving forward). enc_task and the
+  encoder interrupt stay on core 0.
+* The speed and the PI integral use the measured loop time (`mc_in_t.dt_s`) instead of a fixed 10 ms: the kernel tick
+  is 10 ms, so the loop really runs every 10-20 ms and the old speed read up to 2x too high (PC test 16).

@@ -13,6 +13,16 @@
 #define MM_PER_TICK	(PI_F * MC_WHEEL_DIAM_MM / MC_TICKS_PER_REV)
 #define DT		((float)MC_PERIOD_MS / 1000.0f)
 
+/* effective track used for the heading (see motion_ctrl.h). One aligned float: written whole by S1, read by motion_task. */
+volatile float mc_track_mm = MC_TRACK_MM;
+
+bool mc_set_track(float mm)
+{
+	if (!(mm >= MC_TRACK_MIN_MM && mm <= MC_TRACK_MAX_MM)) return false;	/* also rejects NaN */
+	mc_track_mm = mm;
+	return true;
+}
+
 static float clampf(float x, float lo, float hi)
 {
 	return x < lo ? lo : (x > hi ? hi : x);
@@ -57,6 +67,7 @@ static void start_manoeuvre(mc_t *m, mc_state_t st)
 		m->resume = MC_ST_STOPPED;
 	m->state = st;
 	m->man_cycles = 0;
+	m->man_ms = 0.0f;
 	m->cmd_done = false;
 }
 
@@ -121,7 +132,7 @@ static void apply_cmd(mc_t *m, const motion_cmd_t *c)
 }
 
 /* one wheel: feed-forward + PI.  Returns duty -1000..1000 */
-static int wheel_pid(float tgt, float meas, float *integ)
+static int wheel_pid(float tgt, float meas, float *integ, float dt)
 {
 	if (mm_fabsf(tgt) < 1.0f) {
 		*integ = 0.0f;
@@ -131,7 +142,7 @@ static int wheel_pid(float tgt, float meas, float *integ)
 	float ff  = sgn * (MC_FF_PWM_MIN + MC_FF_PER_MM_S * mm_fabsf(tgt));
 	float err = tgt - meas;
 
-	*integ = clampf(*integ + MC_KI * err * DT, -MC_INTEG_MAX, MC_INTEG_MAX);
+	*integ = clampf(*integ + MC_KI * err * dt, -MC_INTEG_MAX, MC_INTEG_MAX);
 	return (int)clampf(ff + MC_KP * err + *integ, -1000.0f, 1000.0f);
 }
 
@@ -139,6 +150,8 @@ void mc_step(mc_t *m, const mc_in_t *in, mc_out_t *out)
 {
 	bool fault_new = false;
 	bool reset_used = false;
+	/* the real loop time (10-20 ms with the kernel's 10 ms tick); a missing or absurd value falls back to MC_PERIOD_MS */
+	const float dt = (in->dt_s > 0.001f && in->dt_s < 0.5f) ? in->dt_s : DT;
 
 	float dl = (float)in->dticks_l * MM_PER_TICK;
 	float dr = (float)in->dticks_r * MM_PER_TICK;
@@ -146,9 +159,9 @@ void mc_step(mc_t *m, const mc_in_t *in, mc_out_t *out)
 	m->dl_mm += dl;
 	m->dr_mm += dr;
 	m->dist_mm = 0.5f * (m->dl_mm + m->dr_mm);
-	m->heading += (dr - dl) / MC_TRACK_MM * RAD2DEG;	/* right wheel further = turned left */
-	m->v_l += MC_V_FILTER * (dl / DT - m->v_l);
-	m->v_r += MC_V_FILTER * (dr / DT - m->v_r);
+	m->heading += (dr - dl) / mc_track_mm * RAD2DEG;	/* right wheel further = turned left */
+	m->v_l += MC_V_FILTER * (dl / dt - m->v_l);
+	m->v_r += MC_V_FILTER * (dr / dt - m->v_r);
 
 	if (in->stop_bit) {
 		if (m->state != MC_ST_FAULT_STOP || m->fault == MC_FAULT_NONE)
@@ -166,7 +179,9 @@ void mc_step(mc_t *m, const mc_in_t *in, mc_out_t *out)
 		apply_cmd(m, in->cmd);
 
 	if (m->state == MC_ST_TURNING || m->state == MC_ST_U_TURN || m->state == MC_ST_DISTANCE_MOVE) {
-		if (++m->man_cycles * MC_PERIOD_MS > MC_CMD_TIMEOUT_MS) {
+		m->man_cycles++;
+		m->man_ms += dt * 1000.0f;			/* real time, not loops x 10 ms */
+		if (m->man_ms > (float)MC_CMD_TIMEOUT_MS) {
 			enter_fault(m, MC_FAULT_TIMEOUT);
 			fault_new = true;
 		}
@@ -232,8 +247,8 @@ void mc_step(mc_t *m, const mc_in_t *in, mc_out_t *out)
 	if (tl == 0.0f && tr == 0.0f) {
 		m->i_l = m->i_r = 0.0f;
 	} else {
-		pl = wheel_pid(tl, m->v_l, &m->i_l);
-		pr = wheel_pid(tr, m->v_r, &m->i_r);
+		pl = wheel_pid(tl, m->v_l, &m->i_l, dt);
+		pr = wheel_pid(tr, m->v_r, &m->i_r, dt);
 	}
 
 	/* ---- 7. stall detection: power but no encoder edges (uses last loop's duty) ------------- */

@@ -75,6 +75,9 @@ static void print_evt(const imu_evt_t *e)
 	case IMU_EVT_SENSOR_FAULT:
 		S4_PRINTF(">> SENSOR_FAULT\n");
 		break;
+	case IMU_EVT_TILT:
+		S4_PRINTF(">> TILT    %s deg from level (tipped over / picked up)\n", s4_fx(b0, e->pitch_deg, 1));
+		break;
 	}
 }
 
@@ -91,12 +94,28 @@ static void publish_evt(const imu_evt_t *e)
 #else
 	if (mbf_imu_evt <= 0) return;
 #endif
+#if S4_DEBUG_PRINT
+	if (e->type == IMU_EVT_TILT || e->type == IMU_EVT_HUMP || e->type == IMU_EVT_IMPACT)
+		print_evt(e);				/* rare and important: always show them */
+#endif
 	if (tk_snd_mbf(mbf_imu_evt, e, S4_IMU_EVT_MAXMSZ, TMO_POL) == E_OK) return;
-	if (e->type == IMU_EVT_IMPACT || e->type == IMU_EVT_SENSOR_FAULT) {
+	if (e->type == IMU_EVT_IMPACT || e->type == IMU_EVT_SENSOR_FAULT || e->type == IMU_EVT_TILT) {
 		imu_evt_t dropped;
 		(void)tk_rcv_mbf(mbf_imu_evt, &dropped, TMO_POL);
 		(void)tk_snd_mbf(mbf_imu_evt, e, S4_IMU_EVT_MAXMSZ, TMO_POL);
 	}
+}
+
+/* last hump for S1's MQTT topic (other core): seqlock, odd while being written */
+static void share_hump(const imu_evt_t *e)
+{
+	s4_hump_seq++;
+	__asm__ volatile ("dmb" ::: "memory");
+	s4_last_hump.peak_mm     = e->peak_mm;
+	s4_last_hump.max_hump_mm = e->max_hump_mm;
+	s4_last_hump.t_ms        = e->timestamp_ms;
+	__asm__ volatile ("dmb" ::: "memory");
+	s4_hump_seq++;
 }
 
 static void report_fault_once(bool *reported, const char *why)
@@ -181,6 +200,11 @@ static void run_loop(imu_algo_t *algo, const imu_cal_result_t *cal, IMU_DEBUG *d
 	uint8_t  dbg_div = 0;
 	uint8_t  print_div = 0;
 	bool     first = true;
+	bool     tilted_flag = false;
+	char     tbuf[16];
+	int      last_hump_state = (int)algo->hump_state;
+
+	tk_clr_flg(flg_imu, ~(UINT)FLG_IMU_TILTED);	/* re-synced from algo->tilted on the first sample */
 
 	period_start();
 	for (;;) {
@@ -245,7 +269,34 @@ static void run_loop(imu_algo_t *algo, const imu_cal_result_t *cal, IMU_DEBUG *d
 
 		imu_algo_out_t out;
 		imu_algo_step(algo, &in, &out);
-		for (uint8_t i = 0; i < out.n; i++) publish_evt(&out.evt[i]);
+		for (uint8_t i = 0; i < out.n; i++) {
+			publish_evt(&out.evt[i]);
+			if (out.evt[i].type == IMU_EVT_HUMP) share_hump(&out.evt[i]);
+		}
+
+#if S4_DEBUG_PRINT
+		/* hump detector trace: one line per step, so a hump that is never reported shows where it stopped */
+		if ((int)algo->hump_state != last_hump_state) {
+			char p0[16], p1[16];
+			S4_PRINTF("[IMU] hump %s -> %s  pitch %s deg  h=%s mm  |a| %s g\n",
+				  hump_state_name((hump_state_t)last_hump_state), hump_state_name(algo->hump_state),
+				  s4_fx(p0, algo->pitch_deg, 1), s4_fx(p1, algo->hump_peak_mm, 1), s4_fx(tbuf, algo->accel_mag_g, 2));
+			last_hump_state = (int)algo->hump_state;
+		}
+		if (algo->climb_samples == 1 && algo->hump_state == HUMP_NORMAL)
+			S4_PRINTF("[IMU] hump? pitch %s deg > %d: climbing starts\n", s4_fx(tbuf, algo->pitch_deg, 1),
+				  (int)IMU_HUMP_START_DEG);
+#endif
+
+		/* FLG_IMU_TILTED follows algo->tilted (level state, read by the VC every tick) */
+		if (algo->tilted != tilted_flag) {
+			tilted_flag = algo->tilted;
+			if (tilted_flag) tk_set_flg(flg_imu, FLG_IMU_TILTED);
+			else {
+				tk_clr_flg(flg_imu, ~(UINT)FLG_IMU_TILTED);
+				S4_PRINTF("[IMU] level again (tilt %s deg)\n", s4_fx(tbuf, algo->tilt_deg, 1));
+			}
+		}
 
 		dbg->samples++;
 		const uint32_t exec = S4_US32() - t0;
@@ -312,6 +363,8 @@ EXPORT void imu_task(INT stacd, void *exinf)
 				continue;
 			}
 			imu_algo_init(&algo, cal.pitch_offset_deg, s4_now_ms());
+			imu_algo_set_level(&algo, cal.accel_mean_g);	/* "level" for tilt detection */
+			if (!imu_hw_has_gyro()) imu_algo_set_no_gyro(&algo);	/* LSM303: accelerometer only */
 			calibrated = true;
 		}
 

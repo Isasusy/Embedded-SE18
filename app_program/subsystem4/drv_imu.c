@@ -20,12 +20,26 @@
 #define REG_PWR_MGMT_1		0x6B
 #define REG_WHO_AM_I		0x75
 
+/* ST LSM303 (DLHC / AGR, e.g. GY-511) and LIS3DH accelerometer: 0x19 (SA0 high) or 0x18. The LSM303's compass sits at
+   0x1E and is not used. There is NO gyroscope: imu_hw_has_gyro() returns false and the gyro readings are 0. */
+#define LSM_WHO_AM_I_A		0x0F	/* AGR / LIS3DH: 0x33. DLHC has no WHO_AM_I (any value)       */
+#define LSM_CTRL_REG1_A		0x20
+#define LSM_CTRL_REG4_A		0x23
+#define LSM_CTRL_REG5_A		0x24
+#define LSM_OUT_X_L_A		0x28
+#define LSM_AUTO_INC		0x80	/* set in the register number: read several registers in one go */
+#define LSM_REG1_100HZ_XYZ	0x57	/* ODR 100 Hz, normal power, X/Y/Z on */
+#define LSM_REG4_BDU_8G_HR	0xA8	/* block data update, +-8 g, high resolution (12-bit)        */
+
 static uint8_t s_addr   = 0x68;
 static uint8_t s_who    = 0x00;
 static bool    s_bus_up = false;
+static imu_chip_t s_chip = IMU_CHIP_NONE;
 
 uint8_t imu_hw_addr(void)	{ return s_addr; }
 uint8_t imu_hw_who_am_i(void)	{ return s_who;  }
+imu_chip_t imu_hw_chip(void)	{ return s_chip; }
+bool    imu_hw_has_gyro(void)	{ return s_chip == IMU_CHIP_MPU; }
 
 static ID s_dd = 0;				/* device descriptor of "iica" */
 
@@ -101,6 +115,34 @@ static void pin_mux(unsigned pin)
 	*ctrl = 3u;
 }
 
+/* LSM303 / LIS3DH accelerometer: a chip counts as found only if a control register written to it reads back the same. */
+static bool lsm_init(imu_delay_fn delay_ms)
+{
+	static const uint8_t cand[2] = { 0x19, 0x18 };
+
+	for (int i = 0; i < 2; i++) {
+		const uint8_t a = cand[i];
+		uint8_t back = 0, who = 0;
+
+		if (!reg_write(a, LSM_CTRL_REG1_A, LSM_REG1_100HZ_XYZ)) continue;		/* nothing at this address */
+		if (!reg_read(a, LSM_CTRL_REG1_A, &back, 1) || back != LSM_REG1_100HZ_XYZ) continue;
+		(void)reg_read(a, LSM_WHO_AM_I_A, &who, 1);
+
+		bool ok = true;
+		ok &= reg_write(a, 0x21, 0x00);					/* CTRL_REG2_A: high-pass filter off */
+		ok &= reg_write(a, LSM_CTRL_REG4_A, LSM_REG4_BDU_8G_HR);
+		delay_ms(20);
+		s_addr = a;
+		s_who  = who;
+		s_chip = IMU_CHIP_LSM303;
+		S4_PRINTF("[IMU] found LSM303/LIS3DH accelerometer at address %d (WHO_AM_I = %d). "
+			  "No gyroscope: tilt, impact and humps use the accelerometer only.\n", (unsigned)a, (unsigned)who);
+		if (!ok) S4_PRINTF("[IMU] configuration write failed\n");
+		return ok;
+	}
+	return false;
+}
+
 bool imu_hw_init(imu_delay_fn delay_ms)
 {
 	if (!s_bus_up) {
@@ -127,11 +169,13 @@ bool imu_hw_init(imu_delay_fn delay_ms)
 		}
 	}
 	if (!found) {
-		S4_PRINTF("[IMU] no device answered at 0x68/0x69 on I2C0 (SDA=GP%d SCL=GP%d). Check wiring/power.\n",
-			  PIN_IMU_SDA, PIN_IMU_SCL);
+		if (lsm_init(delay_ms)) return true;	/* no MPU: an LSM303 / LIS3DH accelerometer (0x19 / 0x18)? */
+		S4_PRINTF("[IMU] no IMU answered on I2C0 (SDA=GP%d SCL=GP%d): looked for an MPU-6050 at 0x68/0x69 and an "
+			  "LSM303 accelerometer at 0x19/0x18. Check wiring/power.\n", PIN_IMU_SDA, PIN_IMU_SCL);
 		diagnose();
 		return false;
 	}
+	s_chip = IMU_CHIP_MPU;
 
 	/* 0x68 = MPU6050, 0x70 = MPU6500, 0x71/0x73 = MPU9250/9255. Others: warn; calibration sanity-checks. */
 	if (s_who != 0x68 && s_who != 0x70 && s_who != 0x71 && s_who != 0x73) {
@@ -158,10 +202,21 @@ bool imu_hw_init(imu_delay_fn delay_ms)
 }
 
 static inline int16_t be16(const uint8_t *p) { return (int16_t)(((uint16_t)p[0] << 8) | p[1]); }
+static inline int16_t le16(const uint8_t *p) { return (int16_t)(((uint16_t)p[1] << 8) | p[0]); }
 
 bool imu_hw_read(imu_raw_t *o)
 {
 	uint8_t b[14];
+
+	if (s_chip == IMU_CHIP_LSM303) {	/* accelerometer only: OUT_X_L_A.. 6 bytes, little-endian, left-justified */
+		if (!reg_read(s_addr, LSM_OUT_X_L_A | LSM_AUTO_INC, b, 6)) return false;
+		o->ax_g = le16(&b[0]) / IMU_LSM_ACCEL_LSB_PER_G;
+		o->ay_g = le16(&b[2]) / IMU_LSM_ACCEL_LSB_PER_G;
+		o->az_g = le16(&b[4]) / IMU_LSM_ACCEL_LSB_PER_G;
+		o->gx_dps = o->gy_dps = o->gz_dps = 0.0f;	/* no gyroscope on this chip */
+		return true;
+	}
+
 	if (!reg_read(s_addr, REG_ACCEL_XOUT_H, b, sizeof b)) return false;
 
 	o->ax_g   = be16(&b[0])  / IMU_ACCEL_LSB_PER_G;

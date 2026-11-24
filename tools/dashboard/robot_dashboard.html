@@ -80,6 +80,14 @@ td.num { font-variant-numeric: tabular-nums; }
 .sweep-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; margin-top: 8px; }
 .sweep-facts div { font-size: 12px; color: var(--ink-2); } .sweep-facts b { display: block; font-size: 16px; color: var(--ink); }
 .legend { display: flex; gap: 14px; font-size: 12px; color: var(--ink-2); margin-top: 6px; flex-wrap: wrap; }
+.map-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; }
+.map-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; }
+.map-row.changed { border-color: var(--warning); }
+.map-row b { font-size: 18px; width: 22px; text-align: center; }
+.map-row select { flex: 1; }
+.map-row button { padding: 2px 8px; font-weight: 400; }
+.map-add { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; }
+select { font: inherit; padding: 5px 8px; border: 1px solid var(--axis); border-radius: 6px; background: var(--surface); color: var(--ink); }
 .sw { display: inline-block; width: 12px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 5px; }
 </style>
 </head>
@@ -97,10 +105,10 @@ td.num { font-variant-numeric: tabular-nums; }
   </header>
 
   <div class="grid">
-    <div class="card span-3"><div class="tile-label">State</div><div class="tile-value" id="vState">–</div><div class="tile-sub" id="vStateSince">&nbsp;</div></div>
+    <div class="card span-3"><div class="tile-label">State</div><div class="tile-value" id="vState">–</div><div class="tile-sub" id="vStateSince">&nbsp;</div><div class="tile-sub" id="vStateWait" style="color:var(--warning);font-weight:600"></div></div>
     <div class="card span-3"><div class="tile-label">Fault</div><div class="tile-value status" id="vFault">–</div><div class="tile-sub" id="vFaultSub">&nbsp;</div></div>
     <div class="card span-3"><div class="tile-label">Speed</div><div class="tile-value" id="vSpeed">–</div><div class="tile-sub">mm/s</div></div>
-    <div class="card span-3"><div class="tile-label">Max hump height</div><div class="tile-value" id="vHump">–</div><div class="tile-sub">mm</div></div>
+    <div class="card span-3"><div class="tile-label">Max hump height</div><div class="tile-value" id="vHump">–</div><div class="tile-sub" id="vHumpSub">mm</div></div>
 
     <div class="card span-8">
       <h2>Speed (mm/s), last 60 s</h2>
@@ -116,7 +124,7 @@ td.num { font-variant-numeric: tabular-nums; }
         <button id="btnStop" disabled>STOP</button>
         <button id="btnReset" disabled>RESET</button>
       </div>
-      <div class="tile-sub" style="margin-top:8px">Publishes to <span class="mono">robot/se18/cmd</span></div>
+      <div class="tile-sub" style="margin-top:8px" id="cmdHint">Publishes to <span class="mono">robot/se18/cmd</span></div>
       <h2 style="margin-top:20px">State history</h2>
       <div class="table-scroll" style="max-height:150px">
         <table><thead><tr><th>Time</th><th>State</th></tr></thead><tbody id="stateRows"></tbody></table>
@@ -153,6 +161,42 @@ td.num { font-variant-numeric: tabular-nums; }
     </div>
 
     <div class="card span-12">
+      <h2>Barcode directions</h2>
+      <div class="tile-sub" style="margin:-6px 0 10px">Which direction each barcode letter means at the next junction. The robot starts with A LEFT, B RIGHT,
+        C STRAIGHT, D U-TURN after every power-up; press <b>Send to robot</b> to change it.</div>
+      <div class="map-grid" id="mapRows"></div>
+      <div class="map-add">
+        <input id="mapLetter" type="text" maxlength="1" placeholder="Letter" aria-label="Barcode letter or digit to add" style="width:80px">
+        <select id="mapNewDir" aria-label="Direction for the new letter"></select>
+        <button id="mapAddBtn">Add</button>
+        <span style="flex:1"></span>
+        <button id="mapDefaultsBtn">Defaults</button>
+        <button id="mapSendBtn" class="primary" disabled>Send to robot</button>
+      </div>
+      <div class="tile-sub" id="mapRobot" style="margin-top:8px">Robot is using: waiting for <span class="mono">robot/se18/barcode_map</span></div>
+    </div>
+
+    <div class="card span-12">
+      <h2>Turn calibration</h2>
+      <div class="tile-sub" style="margin:-6px 0 10px">The car measures its turns with the wheel encoders only, and the tyres slip when it spins, so it can
+        turn less than planned (e.g. not clearing an obstacle). Put a mark on the floor at the car's nose, press <b>Spin 360°</b>
+        (robot must be IDLE), then enter how far it <b>really</b> turned.</div>
+      <div class="map-add">
+        <button id="spinBtn" disabled>Spin 360°</button>
+        <span>It really turned</span>
+        <input id="calActual" type="text" inputmode="decimal" placeholder="e.g. 300" aria-label="Degrees the car really turned" style="width:90px">
+        <span>°</span>
+        <button id="calApplyBtn" class="primary" disabled>Apply correction</button>
+        <span style="flex:1"></span>
+        <span>Track</span>
+        <input id="calTrack" type="text" inputmode="decimal" aria-label="Effective track in mm" style="width:90px">
+        <span>mm</span>
+        <button id="calSetBtn" disabled>Set</button>
+      </div>
+      <div class="tile-sub" id="calInfo" style="margin-top:8px">Robot is using: waiting for <span class="mono">robot/se18/config</span></div>
+    </div>
+
+    <div class="card span-12">
       <h2>Raw messages</h2>
       <pre class="log mono" id="log"></pre>
     </div>
@@ -161,7 +205,14 @@ td.num { font-variant-numeric: tabular-nums; }
 
 <script>
 const TOPIC = { status: 'robot/se18/status', hb: 'robot/se18/heartbeat', cmd: 'robot/se18/cmd',
-                barcode: 'robot/se18/barcode', obstacle: 'robot/se18/obstacle' };
+                barcode: 'robot/se18/barcode', obstacle: 'robot/se18/obstacle', hump: 'robot/se18/hump',
+                barcodeMap: 'robot/se18/barcode_map', config: 'robot/se18/config' };
+/* every hump the robot reports (robot/se18/hump); the session best survives the robot's mission reset */
+let humpBest = 0, humpLast = null;
+function showHumpSub() {
+  $('vHumpSub').textContent = humpLast === null ? 'mm' :
+    `mm · last ${humpLast.toFixed(1)} · best this session ${humpBest.toFixed(1)}`;
+}
 const WINDOW_MS = 60000, HB_STALE_MS = 3000;
 const $ = id => document.getElementById(id);
 const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
@@ -174,7 +225,21 @@ let lastHb = 0, lastState = null, stateSince = 0;
 
 /* ---------- connection ---------- */
 function setConn(text, color) { $('connText').textContent = text; $('connDot').style.background = color; }
-function setCmdEnabled(on) { ['btnStart', 'btnStop', 'btnReset'].forEach(id => $(id).disabled = !on); }
+/* STOP / RESET work whenever the link is up; START only once the robot has finished initialising (state IDLE) */
+let linkOn = false;
+function setCmdEnabled(on) { linkOn = on; refreshCmds(); }
+function refreshCmds() {
+  $('btnStop').disabled = $('btnReset').disabled = !linkOn;
+  $('btnStart').disabled = !(linkOn && lastState === 'IDLE');
+  $('mapSendBtn').disabled = !linkOn;
+  $('spinBtn').disabled = !(linkOn && lastState === 'IDLE');
+  $('calApplyBtn').disabled = $('calSetBtn').disabled = !(linkOn && trackMm !== null);
+  $('cmdHint').innerHTML = !linkOn ? 'Not connected' :
+    lastState === 'INIT' ? 'START unlocks when the robot has finished initialising' :
+    lastState === 'FAULT' ? 'Press RESET (or the robot button) first, then START' :
+    lastState === 'IDLE' ? 'Ready: publishes to <span class="mono">robot/se18/cmd</span>' :
+    lastState === null ? 'Waiting for the robot\'s status…' : 'Running: STOP to halt';
+}
 
 function connect() {
   if (client) { client.end(true); client = null; setConn('Disconnected', css('--muted')); setCmdEnabled(false); $('connectBtn').textContent = 'Connect'; return; }
@@ -215,7 +280,11 @@ function handle(topic, text) {
       $('stateRows').insertAdjacentHTML('afterbegin', `<tr><td class="num">${clock(new Date())}</td><td>${esc(m.state)}</td></tr>`);
       $('stateEmpty').style.display = 'none';
     }
-    $('vState').textContent = m.state;
+    $('vState').textContent = m.state === 'INIT' ? 'INITIALISING…' : m.state;
+    const wait = { MOTORS: 'motors', LINE: 'line sensors', IMU: 'IMU', WIFI: 'WiFi / MQTT' };
+    $('vStateWait').textContent = m.state === 'INIT' && Array.isArray(m.waiting) && m.waiting.length ?
+      'waiting for ' + m.waiting.map(w => wait[w] || w).join(', ') : '';
+    refreshCmds();
     const f = m.fault || 'NONE', ok = f === 'NONE';
     $('vFault').innerHTML = `<span class="ico" style="color:${ok ? 'var(--good)' : 'var(--critical)'}">${ok ? '✔' : '✖'}</span>${esc(f)}`;
     $('vFaultSub').textContent = ok ? 'All clear' : 'Fault active';
@@ -231,7 +300,82 @@ function handle(topic, text) {
     return;
   }
   if (topic === TOPIC.obstacle) { drawSweep(m); return; }
+  if (topic === TOPIC.barcodeMap) { mapFromRobot(m); return; }
+  if (topic === TOPIC.config) { calFromRobot(m); return; }
+  if (topic === TOPIC.hump) {
+    humpLast = Number(m.peak_mm);
+    humpBest = Math.max(humpBest, humpLast, Number(m.max_hump_mm) || 0);
+    $('vHump').textContent = Number(m.max_hump_mm).toFixed(1);
+    showHumpSub();
+    return;
+  }
 }
+
+/* ---------- barcode directions: letter -> LEFT / RIGHT / STRAIGHT / UTURN / STOP ---------- */
+const DIRS = ['LEFT', 'RIGHT', 'STRAIGHT', 'UTURN', 'STOP'];
+const DIR_TXT = { LEFT: 'Left', RIGHT: 'Right', STRAIGHT: 'Straight on', UTURN: 'U-turn', STOP: 'Stop (finish)' };
+const MAP_DEFAULT = { A: 'LEFT', B: 'RIGHT', C: 'STRAIGHT', D: 'UTURN' };
+let mapRobot = null, mapEdit = { ...MAP_DEFAULT }, mapDirty = false;
+
+const dirOptions = sel => DIRS.map(d => `<option value="${d}"${d === sel ? ' selected' : ''}>${DIR_TXT[d]}</option>`).join('');
+const mapText = m => Object.keys(m).sort().map(k => `${k} ${DIR_TXT[m[k]] || m[k]}`).join(' · ') || 'no letters';
+
+function renderMap() {
+  $('mapRows').innerHTML = Object.keys(mapEdit).sort().map(k => {
+    const changed = mapRobot && mapRobot[k] !== mapEdit[k];
+    return `<div class="map-row${changed ? ' changed' : ''}"><b>${esc(k)}</b>
+      <select data-k="${esc(k)}" aria-label="Direction for ${esc(k)}">${dirOptions(mapEdit[k])}</select>
+      <button data-del="${esc(k)}" title="Remove ${esc(k)}" aria-label="Remove ${esc(k)}">✕</button></div>`;
+  }).join('') || '<div class="empty">No letters: every barcode will be ignored</div>';
+  $('mapRows').querySelectorAll('select').forEach(s => s.onchange = () => { mapEdit[s.dataset.k] = s.value; mapDirty = true; renderMap(); });
+  $('mapRows').querySelectorAll('[data-del]').forEach(b => b.onclick = () => { delete mapEdit[b.dataset.del]; mapDirty = true; renderMap(); });
+}
+function mapFromRobot(m) {
+  mapRobot = m;
+  $('mapRobot').textContent = 'Robot is using: ' + mapText(m);
+  if (!mapDirty) { mapEdit = { ...m }; }
+  renderMap();
+}
+$('mapNewDir').innerHTML = dirOptions('LEFT');
+$('mapAddBtn').onclick = () => {
+  const k = $('mapLetter').value.trim().toUpperCase();
+  if (!/^[A-Z0-9]$/.test(k)) { $('mapLetter').focus(); return; }
+  mapEdit[k] = $('mapNewDir').value; mapDirty = true; $('mapLetter').value = ''; renderMap();
+};
+$('mapDefaultsBtn').onclick = () => { mapEdit = { ...MAP_DEFAULT }; mapDirty = true; renderMap(); };
+$('mapSendBtn').onclick = () => {
+  const pairs = Object.keys(mapEdit).sort().map(k => `${k}=${mapEdit[k]}`);
+  // letters the robot still has but that were removed here: switch them off
+  if (mapRobot) Object.keys(mapRobot).filter(k => !(k in mapEdit)).forEach(k => pairs.push(`${k}=NONE`));
+  if (!pairs.length) return;
+  sendCmd('map ' + pairs.join(' '));
+  mapDirty = false;                                   // the robot echoes the new table on robot/se18/barcode_map
+};
+renderMap();
+
+/* ---------- turn calibration: spin 360 by the encoders, measure the real angle, correct the track ---------- */
+let trackMm = null;
+function calFromRobot(m) {
+  const first = trackMm === null;
+  trackMm = Number(m.track_mm);
+  $('calInfo').innerHTML = `Robot is using track <b>${trackMm.toFixed(1)} mm</b>. Not kept after a power-up: once turns look right, ` +
+    `put it in <span class="mono">MC_TRACK_MM</span> (app_program/subsystem2/motion_config.h).`;
+  if (first || document.activeElement !== $('calTrack')) $('calTrack').value = trackMm.toFixed(1);
+  refreshCmds();
+}
+function sendTrack(mm) {
+  if (!(mm >= 80 && mm <= 300)) { $('calInfo').textContent = `Track ${mm.toFixed ? mm.toFixed(1) : mm} mm is outside 80-300 mm: not sent.`; return; }
+  sendCmd('cal track=' + mm.toFixed(1));
+}
+$('spinBtn').onclick = () => sendCmd('spin');
+$('calApplyBtn').onclick = () => {
+  const real = parseFloat($('calActual').value);
+  if (!(real > 30 && real < 720)) { $('calActual').focus(); return; }
+  // the encoders said 360: true track = used track x 360 / real (it turned less -> the effective track is wider)
+  sendTrack(trackMm * 360 / real);
+  $('calActual').value = '';
+};
+$('calSetBtn').onclick = () => sendTrack(parseFloat($('calTrack').value));
 
 /* ---------- heartbeat / state age ticker ---------- */
 setInterval(() => {
@@ -355,16 +499,36 @@ $('sweepN').textContent = '· waiting for robot/se18/obstacle';
 
 /* ---------- demo mode: plays fake telemetry in the real JSON formats ---------- */
 const demo = {
-  hb: 0, t0: Date.now(), state: 'IDLE', fault: 'NONE', bcN: 0, obN: 0, tick: 0,
+  hb: 0, t0: Date.now(), state: 'IDLE', fault: 'NONE', bcN: 0, obN: 0, huN: 0, tick: 0,
   pub(topic, obj) { handle(topic, JSON.stringify(obj)); },
-  cmd(c) { c = c.toUpperCase(); if (c === 'START') { this.state = 'LINE_FOLLOW'; this.fault = 'NONE'; } if (c === 'STOP') { this.state = 'FAULT'; this.fault = 'REMOTE_STOP'; } if (c === 'RESET') { this.state = 'IDLE'; this.fault = 'NONE'; } },
+  map: { ...MAP_DEFAULT }, track: 115,
+  cmd(c) {
+    c = c.toUpperCase();
+    if (c.startsWith('CAL TRACK=')) { this.track = parseFloat(c.slice(10)); this.pub(TOPIC.config, { track_mm: this.track }); return; }
+    if (c === 'SPIN') return;                           // the demo car has nowhere to spin
+    if (c.startsWith('MAP ')) {                         // same format the robot parses: "map A=LEFT B=NONE ..."
+      c.slice(4).split(/[\s,]+/).filter(Boolean).forEach(p => { const [k, d] = p.split('='); if (d === 'NONE') delete this.map[k]; else this.map[k] = d; });
+      this.pub(TOPIC.barcodeMap, this.map); return;
+    }
+    if (c === 'START' && this.state === 'IDLE') { this.state = 'LINE_FOLLOW'; this.fault = 'NONE'; }
+    if (c === 'STOP') { this.state = 'FAULT'; this.fault = 'REMOTE_STOP'; }
+    if (c === 'RESET') { this.state = 'IDLE'; this.fault = 'NONE'; }
+  },
   step() {
     const t = Date.now() - this.t0; this.tick++;
     if (this.tick % 2 === 0) this.pub(TOPIC.hb, { hb: ++this.hb, t });
+    if (this.tick % 10 === 1) { this.pub(TOPIC.barcodeMap, this.map); this.pub(TOPIC.config, { track_mm: this.track }); }
+    if (this.state === 'INIT') {                        // initialising: IMU + line first, then WiFi, then IDLE
+      const waiting = this.tick < 4 ? ['LINE', 'IMU', 'WIFI'] : this.tick < 7 ? ['WIFI'] : [];
+      if (!waiting.length) this.state = 'IDLE';
+      this.pub(TOPIC.status, { state: this.state, speed: 0, max_hump_mm: 0, fault: 'NONE', t, ...(waiting.length ? { waiting } : {}) });
+      return;
+    }
     const seq = ['LINE_FOLLOW', 'LINE_FOLLOW', 'LINE_FOLLOW', 'BARCODE_ACTION', 'LINE_FOLLOW', 'HUMP_CROSSING', 'LINE_FOLLOW', 'OBSTACLE_AVOID'];
     if (this.state !== 'IDLE' && this.state !== 'FAULT' && this.tick % 10 === 0) {
       this.state = seq[(this.tick / 10) % seq.length];
-      if (this.state === 'BARCODE_ACTION') { const c = 'ABCDE'[this.bcN % 5]; this.pub(TOPIC.barcode, { code: c, cmd: ['LEFT', 'RIGHT', 'STRAIGHT', 'UTURN', 'STOP'][this.bcN % 5], n: ++this.bcN, pattern: 'NwNnWnWnN', t }); }
+      if (this.state === 'BARCODE_ACTION') { const c = 'ABCDE'[this.bcN % 5]; this.pub(TOPIC.barcode, { code: c, cmd: this.map[c] || 'NONE', n: ++this.bcN, pattern: 'NwNnWnWnN', t }); }
+      if (this.state === 'HUMP_CROSSING' && this.tick % 20 === 0) this.pub(TOPIC.hump, { n: ++this.huN, peak_mm: 18.4, max_hump_mm: 18.4, t });
       if (this.state === 'OBSTACLE_AVOID') this.pub(TOPIC.obstacle, { n: ++this.obN, deg: SWEEP_DEG, mm: SWEEP_DEG.map(a => a > 140 ? -1 : (a >= 75 && a <= 105 ? 190 + Math.random() * 20 | 0 : 300 + Math.random() * 150 | 0)), found: true, dist_mm: 195, width_mm: 120, left_clear_mm: 320, right_clear_mm: 90, side: 'LEFT', t });
     }
     const base = { IDLE: 0, FAULT: 0, LINE_FOLLOW: 220, BARCODE_ACTION: 90, HUMP_CROSSING: 140, OBSTACLE_AVOID: 70 }[this.state] || 0;
@@ -375,7 +539,7 @@ function stopDemo() { if (demoTimer) { clearInterval(demoTimer); demoTimer = nul
 $('demoBtn').onclick = () => {
   if (demoTimer) return stopDemo();
   if (client) connect();                               // disconnect first
-  demo.t0 = Date.now(); demo.state = 'LINE_FOLLOW'; demo.fault = 'NONE';
+  demo.t0 = Date.now(); demo.tick = 0; demo.state = 'INIT'; demo.fault = 'NONE'; demo.map = { ...MAP_DEFAULT }; demo.track = 115;
   demoTimer = setInterval(() => demo.step(), 500);
   $('demoBtn').textContent = 'Stop demo'; setConn('Demo data (no broker)', css('--warning')); setCmdEnabled(true);
 };

@@ -25,9 +25,17 @@ typedef struct {
 
 typedef void (*imu_delay_fn)(uint32_t ms);	/* lets the task keep its ALIVE flag set while waiting */
 
+/* Supported chips, probed in this order:
+ *   IMU_CHIP_MPU     MPU-6050 / 6500 / 9250 family at 0x68 / 0x69 (accelerometer + gyroscope)
+ *   IMU_CHIP_LSM303  ST LSM303 (DLHC / AGR, e.g. GY-511) or LIS3DH accelerometer at 0x19 / 0x18 - NO gyroscope,
+ *                    gyro readings are always 0. The LSM303's compass (0x1E) is not used. */
+typedef enum { IMU_CHIP_NONE, IMU_CHIP_MPU, IMU_CHIP_LSM303 } imu_chip_t;
+
 bool	imu_hw_init(imu_delay_fn delay_ms);	/* bus + probe + configure; false if no IMU answers */
 bool	imu_hw_read(imu_raw_t *out);		/* one burst read, ~0.4 ms; false on any I2C error   */
 uint8_t	imu_hw_addr(void);
 uint8_t	imu_hw_who_am_i(void);
+imu_chip_t imu_hw_chip(void);
+bool	imu_hw_has_gyro(void);			/* false for the LSM303: the algorithm then uses the accelerometer for pitch */
 
 #endif /* DRV_IMU_H */

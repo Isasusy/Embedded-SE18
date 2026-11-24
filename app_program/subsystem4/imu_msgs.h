@@ -26,7 +26,8 @@ typedef enum {
 	IMU_EVT_HUMP,		/* one hump finished: peak_mm + max_hump_mm valid        */
 	IMU_EVT_IMPACT,		/* collision / shock: Vehicle Controller sets STOP       */
 	IMU_EVT_MOTION_CLASS,	/* class changed, or periodic status (turn rate etc.)    */
-	IMU_EVT_SENSOR_FAULT	/* repeated I2C failure / calibration failure            */
+	IMU_EVT_SENSOR_FAULT,	/* repeated I2C failure / calibration failure            */
+	IMU_EVT_TILT		/* ADDED: tipped over / picked up and tilted (pitch_deg = tilt angle): VC stops */
 } imu_evt_type_t;
 
 typedef struct {

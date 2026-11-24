@@ -4,8 +4,19 @@
  *	APIs shown: tk_cre_mbf, tk_rcv_mbf (polling), tk_snd_mbf (polling)
  */
 #include "subsystem1.h"
+#include "../subsystem4/subsystem4.h"	/* s4_last_hump / s4_hump_seq: each measured hump, for robot/se18/hump */
+#include "../subsystem3/barcode_algo.h"	/* bd_map_*: barcode letter -> direction table, set from the dashboard */
+#include "../subsystem2/motion_ctrl.h"	/* mc_track_mm / mc_set_track: turn calibration, set from the dashboard */
+
+/* Owned by S4. Weak defaults (0 = no hump yet) so S1 links and runs without it. */
+__attribute__((weak)) volatile s4_hump_t	s4_last_hump;
+__attribute__((weak)) volatile unsigned		s4_hump_seq;
 
 EXPORT ID	mbf_status;
+
+/* Goes up on every s1_service() call, which mqtt_utk.c makes only while MQTT is connected (at least every 100 ms).
+   The Vehicle Controller watches it to know the dashboard link is up before it leaves INIT (see subsystem1.h). */
+EXPORT volatile unsigned	s1_online_count;
 
 /* Owned by the Vehicle Controller (S5). Weak default 0 so S1 links and runs without it. */
 __attribute__((weak)) ID	mbf_remote_cmd;
@@ -41,7 +52,43 @@ EXPORT void s1_service(s1_publish_fn publish, void *ctx, uint32_t now_ms)
 {
 	static uint32_t last_hb_ms, hb_seq;
 	static bool hb_started;
-	static unsigned bc_seen, ob_seen;
+	static unsigned map_sent_ver;
+	static uint32_t map_sent_ms;
+	static bool map_sent;
+
+	s1_online_count++;
+
+	/* the barcode direction table: on every change, and every 5 s so a dashboard opened later sees it */
+	{
+		unsigned v = bd_map_version();
+		if (!map_sent || v != map_sent_ver || (uint32_t)(now_ms - map_sent_ms) >= 5000u) {
+			int8_t tab[BD_MAP_N];
+			static char mbuf[400];
+			bd_map_copy(tab);
+			int n = tm_format_map(mbuf, sizeof mbuf, tab);
+			if (n > 0 && publish(ctx, S1_TOPIC_BARCODE_MAP, mbuf, n) == 0) {
+				map_sent = true;
+				map_sent_ver = v;
+				map_sent_ms = now_ms;
+			}
+		}
+	}
+
+	/* calibration in use (turn track): on every change, and every 5 s */
+	{
+		static float cfg_sent_track = -1.0f;
+		static uint32_t cfg_sent_ms;
+		float t = mc_track_mm;
+		if (t != cfg_sent_track || (uint32_t)(now_ms - cfg_sent_ms) >= 5000u) {
+			char cbuf[40];
+			int n = tm_format_config(cbuf, sizeof cbuf, t);
+			if (n > 0 && publish(ctx, S1_TOPIC_CONFIG, cbuf, n) == 0) {
+				cfg_sent_track = t;
+				cfg_sent_ms = now_ms;
+			}
+		}
+	}
+	static unsigned bc_seen, ob_seen, hump_seen;
 	static char buf[512];			/* static: the obstacle JSON is too big for the WiFi task's stack */
 
 	/* A status lwIP refuses (all MQTT requests still waiting for a TCP ACK) is kept and sent on the next call. */
@@ -91,6 +138,20 @@ EXPORT void s1_service(s1_publish_fn publish, void *ctx, uint32_t now_ms)
 		}
 	}
 
+	/* a new hump from the IMU: publish it once (seqlock copy, same as above) */
+	unsigned h1 = s4_hump_seq;
+	if (h1 != hump_seen && !(h1 & 1u)) {
+		__asm__ volatile ("dmb" ::: "memory");
+		const float peak = s4_last_hump.peak_mm, max = s4_last_hump.max_hump_mm;
+		const uint32_t t = s4_last_hump.t_ms;
+		__asm__ volatile ("dmb" ::: "memory");
+		if (s4_hump_seq == h1) {
+			int n = tm_format_hump(buf, sizeof buf, h1 / 2u, peak, max, t);
+			if (n > 0 && publish(ctx, S1_TOPIC_HUMP, buf, n) == 0)
+				hump_seen = h1;			/* else try again on the next call */
+		}
+	}
+
 	if (!hb_started) { hb_started = true; last_hb_ms = now_ms; }
 	if ((uint32_t)(now_ms - last_hb_ms) >= 1000u) {
 		last_hb_ms = now_ms;
@@ -103,6 +164,26 @@ EXPORT void s1_service(s1_publish_fn publish, void *ctx, uint32_t now_ms)
 EXPORT void s1_rx(const char *topic, const char *payload, int len)
 {
 	(void)topic;			/* only S1_TOPIC_CMD is subscribed */
+
+	/* "cal track=138": turn calibration (Motion Control's effective wheel spacing) */
+	float tr;
+	if (tm_parse_cal(payload, len, &tr) > 0) {
+		bool ok = mc_set_track(tr);
+		tm_printf((UB *)"[S1] cal track=%d.%d mm %s\n", (int)tr, (int)(tr * 10.0f) % 10,
+			  ok ? "set" : "REFUSED (out of range)");
+		return;
+	}
+
+	/* "map A=LEFT B=RIGHT ...": change the barcode direction table (checked first: it may contain the word STOP) */
+	char ch[BD_MAP_N];
+	int nv[BD_MAP_N];
+	int k = tm_parse_map(payload, len, ch, nv, BD_MAP_N);
+	if (k > 0) {
+		for (int i = 0; i < k; i++) (void)bd_map_set(ch[i], nv[i]);
+		tm_printf((UB *)"[S1] barcode map changed (%d letters)\n", k);
+		return;
+	}
+
 	int c = tm_parse_cmd(payload, len);
 	if (c < 0 || mbf_remote_cmd <= 0)
 		return;

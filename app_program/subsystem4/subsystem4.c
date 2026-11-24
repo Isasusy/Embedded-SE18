@@ -9,6 +9,8 @@
 
 EXPORT ID	flg_imu;
 EXPORT IMU_DEBUG s4_imu_debug;
+EXPORT volatile s4_hump_t	s4_last_hump;	/* for S1's robot/se18/hump topic (seqlock, see subsystem4.h) */
+EXPORT volatile unsigned	s4_hump_seq;
 
 /* Objects other subsystems will own (IF-06, IF-08). Weak defaults let subsystem 4 build, link and run
    on its own: while they stay 0 the IMU task prints its events and uses S4_FAKE_SPEED_MM_S. When the

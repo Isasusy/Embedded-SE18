@@ -9,6 +9,20 @@
 #include <stdbool.h>
 #include "line_config.h"
 
+/* ---- Barcode character -> direction, changeable at run time ----
+ * Starts as the BAR_CHAR_* defaults in line_config.h (A LEFT, B RIGHT, C STRAIGHT, D UTURN). The dashboard changes it
+ * over MQTT ("map A=LEFT B=STOP ...", handled by S1 in the WiFi task); the barcode task reads it for every decode.
+ * Each entry is one byte, so no lock is needed. Characters: A-Z and 0-9. nav = nav_cmd_type_t, or -1 = no command.
+ * Not kept across a reboot: the defaults come back on power-up. */
+#define BD_MAP_N	36
+int		bd_map_index(char c);			/* 'A'..'Z' -> 0..25, '0'..'9' -> 26..35, else -1 */
+char		bd_map_char(int i);			/* the reverse; 0 if out of range */
+int		bd_map_get(char c);			/* nav for this character, -1 = none */
+bool		bd_map_set(char c, int nav);		/* false if c is not A-Z / 0-9 or nav out of range */
+void		bd_map_defaults(void);
+void		bd_map_copy(int8_t nav_out[BD_MAP_N]);	/* snapshot, index = bd_map_index() */
+unsigned	bd_map_version(void);			/* changes on every set: S1 republishes the table */
+
 typedef struct {
 	bool		active;				/* inside a barcode */
 	bool		black;				/* level of the element being timed */

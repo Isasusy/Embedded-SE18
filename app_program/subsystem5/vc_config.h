@@ -30,6 +30,17 @@
 #define VC_NAV_EXPIRE_MS	15000		/* a barcode command is dropped if no junction comes within this time (0 = never) */
 #define VC_SELFTEST_MS		15000		/* INIT: all subsystems must report READY in this time. Long enough for the
 						   IMU's calibration retries (up to 5 x (2 s + 0.5 s)) and S3's 2 s calibration */
+/* INIT also waits for the MQTT link, so the dashboard is live before the car can be started. Only in builds with MQTT
+   (make ... NET=lwip MQTT=1 defines TM_MQTT). If WiFi / MQTT is still not up VC_NET_WAIT_MS after everything else was
+   READY, INIT gives up waiting and goes to IDLE anyway (the car still runs without the dashboard). */
+#ifndef VC_WAIT_FOR_NET
+#if defined(TM_MQTT) && TM_MQTT
+#define VC_WAIT_FOR_NET		1
+#else
+#define VC_WAIT_FOR_NET		0
+#endif
+#endif
+#define VC_NET_WAIT_MS		30000
 #define VC_ALIVE_MS		100		/* NFR10: a task silent longer than this = fault */
 #define VC_RECOVER_TIMEOUT_MS	4000
 #define VC_HUMP_TIMEOUT_MS	6000
@@ -79,6 +90,21 @@
 #define VC_REQUIRE_IMU		1
 #endif
 
+/* 1 = an IMU IMPACT (sudden shock, IMU_SHOCK_G) stops the car with FAULT_IMPACT. 0 = ignored: the IMU still detects and
+   prints it (">> IMPACT"), the car keeps driving. Set 0 by the team (23 Nov): the car's own jolts kept stopping it. */
+#ifndef VC_STOP_ON_IMPACT
+#define VC_STOP_ON_IMPACT	0
+#endif
+
+/* Stop when the car is tipped over / held tilted (IMU, needs the IMU working) or picked up (line sensors).
+   Both work in bench mode too. While tilted or lifted the car also refuses to start. 0 = ignore. */
+#ifndef VC_STOP_ON_TILT
+#define VC_STOP_ON_TILT		1
+#endif
+#ifndef VC_STOP_ON_LIFT
+#define VC_STOP_ON_LIFT		1
+#endif
+
 #define SCAN_PERIOD_MS		60		/* ping period while WATCHing (task table: 60 ms per ping) */
 #define SCAN_CLOSE_MM		200		/* WATCH: closer than this twice in a row = obstacle close = STOP (adjust; keep below SCAN_NEAR_MM) */
 #define SCAN_HOLD_PCT		120		/* while the car is STOPPED for an obstacle it still counts as there out to this %
@@ -94,13 +120,16 @@
 #define SCAN_TRACK_CLEAR_PINGS	4		/* after a hit the servo stays on the obstacle until this many clear pings in a row */
 #define SCAN_NEAR_MM		400		/* a ray shorter than this belongs to the obstacle */
 #define SCAN_SIDE_TIE_MM	30		/* sides this close in free space count as equal: take the shorter detour */
-#define SCAN_BEAM_HALF_DEG	7		/* HC-SR04 beam half-width: each edge is pulled in by this (CALIBRATE: measure a
-						   known box; 0 = no correction) */
+#define SCAN_BEAM_HALF_DEG	15		/* HC-SR04 beam half-width: each edge is pulled in by this. Was 7: on the robot
+						   (23 Nov) a box at 104 mm echoed from servo 45 to 125 deg (80 deg), i.e. a
+						   beam of ~15 deg each side. The route is planned on the corrected width.
+						   CALIBRATE: profile a box of known width; raise this if it reads too wide */
 #ifndef SCAN_PLAN_WIDTH_PCT
-#define SCAN_PLAN_WIDTH_PCT	200		/* clearance: the route is planned round an obstacle this % of the measured
-						   width, centred on it, with the same depth (no fixed margins): 200 = half
-						   its width clear on each side and a full width behind it */
+#define SCAN_PLAN_WIDTH_PCT	150		/* the route is planned round an obstacle this % of the beam-corrected width,
+						   centred on it, with the same depth. Was 200 (on the uncorrected width):
+						   every real obstacle then needed > 2 m of free space and was never passed */
 #endif
+#define SCAN_SIDE_MARGIN_MM	40		/* gap between the car's side and the planned obstacle while passing it */
 #define SCAN_DEPTH_MIN_MM	80		/* planned depth (= planned width) is clamped to this range */
 #define SCAN_DEPTH_MAX_MM	400
 /* PROFILE sweep (after the car has stopped for an obstacle). Angles are ABSOLUTE servo degrees, SCAN_SERVO_CENTRE_DEG

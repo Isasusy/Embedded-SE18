@@ -85,3 +85,21 @@ In bench and mission mode alike (`VC_OBST_BYPASS 1`), OBSTACLE_AVOID now runs th
 `depth_mm`, `turn_deg`, `diag_mm`, `lat_mm` and `pass_mm`. The console prints the plan (`[S5] plan: ...`), then
 after each step how far the car really turned and drove (`[S5] avoid: step N done, heading ... drove ...`): compare
 the two to tell a wrong plan from a turn or move that undershoots.
+
+## Stop when tipped over or picked up (23 Nov)
+`VC_STOP_ON_TILT` and `VC_STOP_ON_LIFT` (both 1, in `vc_config.h`) work in bench mode and in the full mission:
+* **Tilted** (S4 `FLG_IMU_TILTED` or `IMU_EVT_TILT`: leaning more than 35 deg) while driving -> STOP, `FAULT_TILT`.
+* **Lifted** (S3 `FLG_LINE_LIFTED`: both line sensors above `LINE_LIFTED_ADC` for `LINE_LIFTED_MS` = 200 ms, i.e. no floor) while
+  driving -> STOP, `FAULT_LIFTED`.
+* In IDLE nothing happens (the car is not moving). A START (button or MQTT) while still tilted or lifted is refused with the
+  same fault, so the car never drives off in your hand. Put it down level, press the button again: reset, then start.
+* The dashboard shows the fault as `TILT` or `LIFTED`. The tilt stop needs a working IMU. The lift stop does not.
+
+## Initialising phase, impact stop off, barcode directions from the dashboard (23 Nov)
+* **INIT waits for everything:** motors, line sensors, IMU and (MQTT builds) the MQTT link, before IDLE. While waiting,
+  `robot/se18/status` carries `"waiting":["IMU","WIFI",...]` and the dashboard shows INITIALISING with that list; its
+  START button only unlocks in IDLE. The robot button is refused in INIT (`[S5] button: still initialising ...`).
+  If WiFi never connects, INIT gives up after `VC_NET_WAIT_MS` (30 s) and goes to IDLE, so the car still runs without
+  the dashboard. `VC_WAIT_FOR_NET` is 1 only when built with `MQTT=1`.
+* **Impact no longer stops the car:** `VC_STOP_ON_IMPACT 0`. The IMU still prints `>> IMPACT`.
+* **Barcode directions:** see `docs/README_subsystem1.md` (command `map ...`, topic `robot/se18/barcode_map`).

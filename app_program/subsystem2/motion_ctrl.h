@@ -38,6 +38,7 @@ typedef struct {
 	float		man_h0, man_angle;	/* TURN / U_TURN start heading and signed angle */
 	float		man_d0, man_dist, man_speed;
 	unsigned	man_cycles;
+	float		man_ms;			/* real time spent on the current manoeuvre (timeout) */
 	unsigned	stall_l, stall_r;
 	int		pwm_l, pwm_r;
 	mc_fault_t	fault;
@@ -51,6 +52,10 @@ typedef struct {
 	float		steer_mm_s;		/* line_status_t.steering_corr                                */
 	bool		stop_bit;		/* FLG_MOTION_STOP currently set                              */
 	bool		reset;			/* FLG_MOTION_RESET currently set                             */
+	float		dt_s;			/* ADDED: real time since the last call, s (0 = MC_PERIOD_MS).
+						   The kernel tick is 10 ms, so the "10 ms" loop really runs every
+						   10-20 ms; dividing by a fixed 10 ms read the speed up to 2x too
+						   high and the PI starved the motors (jerky, uneven wheels). */
 } mc_in_t;
 
 typedef struct {
@@ -62,6 +67,13 @@ typedef struct {
 	bool		reset_consumed;		/* TRUE when this call acted on `reset`                       */
 	float		tgt_l, tgt_r;		/* wheel speed targets, for the debug line                    */
 } mc_out_t;
+
+/* Effective track (wheel spacing) used to turn wheel distances into heading. Starts as MC_TRACK_MM. A car spinning on
+   the spot scrubs its tyres, so it turns LESS than the encoders say unless this is larger than the measured spacing.
+   Calibrate with the dashboard's spin test (a TURN of 360): new = old x 360 / degrees really turned.
+   Set over MQTT ("cal track=138", S1 calls mc_set_track); not kept across a reboot: put the result in MC_TRACK_MM. */
+extern volatile float	mc_track_mm;
+bool		mc_set_track(float mm);		/* false (unchanged) outside MC_TRACK_MIN_MM..MC_TRACK_MAX_MM */
 
 void		mc_init(mc_t *m);
 void		mc_step(mc_t *m, const mc_in_t *in, mc_out_t *out);

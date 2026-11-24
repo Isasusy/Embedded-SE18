@@ -27,6 +27,7 @@ static void enter(vc_t *v, vc_out_t *o, vc_state_t s, uint32_t now)
 	v->state = s;
 	v->t_state = now;
 	v->settle = 0;
+	if (s == VC_INIT) v->t_ready = 0;
 	o->send_status = true;
 }
 
@@ -149,6 +150,8 @@ static void junction_action(vc_t *v, vc_out_t *o, uint32_t now)
 void vc_step(vc_t *v, const vc_in_t *in, vc_out_t *o)
 {
 	uint32_t now = in->now_ms;
+	/* tipped over: S4's level flag, or its TILT event if that arrives first */
+	const bool tilted = in->tilted || (in->imu && in->imu->type == IMU_EVT_TILT);
 	memset(o, 0, sizeof *o);
 
 	if (!v->started) {
@@ -174,8 +177,13 @@ void vc_step(vc_t *v, const vc_in_t *in, vc_out_t *o)
 	}
 	if (v->state != VC_FAULT && v->state != VC_INIT) {
 		if (in->remote && in->remote->cmd == REMOTE_STOP) { enter_fault(v, o, FAULT_REMOTE_STOP, now); goto status; }
-		if (VC_REQUIRE_IMU && in->imu && in->imu->type == IMU_EVT_IMPACT)   { enter_fault(v, o, FAULT_IMPACT, now); goto status; }
+		if (VC_STOP_ON_IMPACT && VC_REQUIRE_IMU && in->imu && in->imu->type == IMU_EVT_IMPACT)   { enter_fault(v, o, FAULT_IMPACT, now); goto status; }
 		if (VC_REQUIRE_IMU && in->imu && in->imu->type == IMU_EVT_SENSOR_FAULT) { enter_fault(v, o, FAULT_IMU_SENSOR, now); goto status; }
+		/* tipped over / picked up while driving: stop. In IDLE / COMPLETE the car is not moving; a start is refused below. */
+		if (v->state != VC_IDLE && v->state != VC_COMPLETE) {
+			if (VC_STOP_ON_TILT && tilted)     { enter_fault(v, o, FAULT_TILT, now); goto status; }
+			if (VC_STOP_ON_LIFT && in->lifted) { enter_fault(v, o, FAULT_LIFTED, now); goto status; }
+		}
 		if (in->motion_fault)                             { enter_fault(v, o, FAULT_MOTION, now); goto status; }
 		if (v->state != VC_COMPLETE && (now - v->t_last_alive) > VC_ALIVE_MS) {
 			enter_fault(v, o, FAULT_WATCHDOG, now); goto status;
@@ -184,13 +192,25 @@ void vc_step(vc_t *v, const vc_in_t *in, vc_out_t *o)
 
 	switch (v->state) {
 	case VC_INIT:
-		if (in->all_ready)
-			enter(v, o, VC_IDLE, now);
-		else if (now - v->t_state > VC_SELFTEST_MS)
+		/* initialising: every subsystem READY, and (MQTT builds) the dashboard link up, before IDLE allows a START */
+		if (in->all_ready) {
+			if (!v->t_ready) v->t_ready = now ? now : 1;
+			if (!VC_WAIT_FOR_NET || in->net_ready || now - v->t_ready > VC_NET_WAIT_MS)
+				enter(v, o, VC_IDLE, now);
+		} else if (now - v->t_state > VC_SELFTEST_MS) {
 			enter_fault(v, o, FAULT_SELFTEST, now);
+		}
 		break;
 
 	case VC_IDLE:
+		/* never start while tilted or held in the air: report why instead */
+		if ((VC_STOP_ON_TILT && tilted) || (VC_STOP_ON_LIFT && in->lifted)) {
+			if ((in->remote && in->remote->cmd == REMOTE_START) || v->bench_restart) {
+				v->bench_restart = false;
+				enter_fault(v, o, (VC_STOP_ON_TILT && tilted) ? FAULT_TILT : FAULT_LIFTED, now);
+			}
+			break;
+		}
 #if VC_BENCH_LINE_ONLY
 		if (v->bench_restart && now - v->t_state >= 300) {
 			v->bench_restart = false;
@@ -202,6 +222,10 @@ void vc_step(vc_t *v, const vc_in_t *in, vc_out_t *o)
 		if (in->remote && in->remote->cmd == REMOTE_START) {
 			go(v, o, VC_CRUISE_SPEED);
 			enter(v, o, VC_LINE_FOLLOW, now);
+		} else if (in->remote && in->remote->cmd == REMOTE_SPIN) {
+			/* turn calibration: Motion Control turns until its encoders say 360 deg; the user compares that with
+			   what the car really did. The state stays IDLE; STOP still works (FAULT stops the motors). */
+			cmd(o, MOTION_CMD_TURN, VC_CRUISE_SPEED, 360, 0);
 		}
 		break;
 
@@ -390,6 +414,8 @@ status:
 		o->status.state = v->state;
 		o->status.speed_mm_s = in->speed_mm_s;
 		o->status.max_hump_mm = v->max_hump_mm;
+		o->status.waiting = v->state != VC_INIT ? 0u :
+			(in->waiting | ((VC_WAIT_FOR_NET && !in->net_ready) ? VC_WAIT_NET : 0u));
 		o->status.fault_code = v->fault;
 		o->status.timestamp_ms = now;
 	}

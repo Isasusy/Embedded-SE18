@@ -16,3 +16,14 @@ Topics (laptop broker, monitor with MQTT Explorer):
 
 Build: `make WIFI=cyw43 NET=lwip MQTT=1 -j8` with `config/wifi_secrets.h` filled in (SSID, password, broker IP = the
 laptop's IP on the same 2.4 GHz network).
+
+## Added 23 Nov
+| Topic | Direction | Content |
+|---|---|---|
+| robot/se18/hump | robot -> laptop | every hump the IMU measures, once: {"n":2,"peak_mm":18.4,"max_hump_mm":22.3,"t":...} |
+| robot/se18/barcode_map | robot -> laptop | barcode letter -> direction in use, on change and every 5 s: {"A":"LEFT","B":"RIGHT",...} |
+| robot/se18/cmd | laptop -> robot | also `map A=LEFT B=RIGHT C=STRAIGHT D=UTURN E=STOP F=NONE` (letters A-Z / 0-9) |
+
+`robot/se18/status` also has `"waiting":[...]` (MOTORS, LINE, IMU, WIFI) while the state is INIT.
+The barcode directions are not saved: after a power-up the robot is back to A LEFT, B RIGHT, C STRAIGHT, D UTURN
+(line_config.h); press Send to robot on the dashboard again.

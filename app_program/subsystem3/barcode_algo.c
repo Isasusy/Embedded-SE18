@@ -21,16 +21,60 @@ static char lookup(uint16_t p)
 	return 0;
 }
 
-static int nav_of(char c)
+/* ---- barcode character -> direction table (see barcode_algo.h). Stored as nav + 1, so 0 = no command. ---- */
+static volatile int8_t   s_map[BD_MAP_N];
+static volatile unsigned s_map_ver;
+static volatile bool     s_map_ready;
+
+int bd_map_index(char c)
 {
-	switch (c) {
-	case BAR_CHAR_LEFT:	return NAV_LEFT;
-	case BAR_CHAR_RIGHT:	return NAV_RIGHT;
-	case BAR_CHAR_STRAIGHT:	return NAV_STRAIGHT;
-	case BAR_CHAR_UTURN:	return NAV_UTURN;
-	default:		return -1;
-	}
+	if (c >= 'a' && c <= 'z') c = (char)(c - 'a' + 'A');
+	if (c >= 'A' && c <= 'Z') return c - 'A';
+	if (c >= '0' && c <= '9') return 26 + (c - '0');
+	return -1;
 }
+
+char bd_map_char(int i) { return (i >= 0 && i < 26) ? (char)('A' + i) : ((i >= 26 && i < BD_MAP_N) ? (char)('0' + i - 26) : 0); }
+
+void bd_map_defaults(void)
+{
+	for (int i = 0; i < BD_MAP_N; i++) s_map[i] = 0;
+	s_map[bd_map_index(BAR_CHAR_LEFT)]     = NAV_LEFT + 1;
+	s_map[bd_map_index(BAR_CHAR_RIGHT)]    = NAV_RIGHT + 1;
+	s_map[bd_map_index(BAR_CHAR_STRAIGHT)] = NAV_STRAIGHT + 1;
+	s_map[bd_map_index(BAR_CHAR_UTURN)]    = NAV_UTURN + 1;
+	s_map_ready = true;
+	s_map_ver++;
+}
+
+static void map_ensure(void) { if (!s_map_ready) bd_map_defaults(); }
+
+int bd_map_get(char c)
+{
+	map_ensure();
+	int i = bd_map_index(c);
+	return i < 0 ? -1 : s_map[i] - 1;
+}
+
+bool bd_map_set(char c, int nav)
+{
+	map_ensure();
+	int i = bd_map_index(c);
+	if (i < 0 || nav < -1 || nav > NAV_STOP) return false;
+	s_map[i] = (int8_t)(nav + 1);		/* one byte: the barcode task never sees half an update */
+	s_map_ver++;
+	return true;
+}
+
+void bd_map_copy(int8_t nav_out[BD_MAP_N])
+{
+	map_ensure();
+	for (int i = 0; i < BD_MAP_N; i++) nav_out[i] = (int8_t)(s_map[i] - 1);
+}
+
+unsigned bd_map_version(void) { map_ensure(); return s_map_ver; }
+
+static int nav_of(char c) { return bd_map_get(c); }
 
 /* one character = 9 widths: the 3 widest are wide */
 static uint16_t char_bits(const uint32_t *w)

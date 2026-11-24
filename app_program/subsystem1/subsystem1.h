@@ -22,6 +22,10 @@ IMPORT ID	mbf_status;
 /* IF-15  S1 -> Vehicle Controller : remote_cmd_t, message buffer owned by S5 (see ../subsystem5/subsystem5.h). */
 IMPORT ID	mbf_remote_cmd;
 
+/* ADDED  S1 -> Vehicle Controller : goes up on every s1_service() call (only made while MQTT is connected).
+   The VC stays in INIT until it has seen it change recently, so START is only possible with the dashboard live. */
+IMPORT volatile unsigned	s1_online_count;
+
 /* The two hooks. Both are non-blocking and are called ONLY from the WiFi service task. */
 typedef int (*s1_publish_fn)(void *ctx, const char *topic, const char *payload, int len);
 IMPORT void	s1_service(s1_publish_fn publish, void *ctx, uint32_t now_ms);	/* call at least every 100 ms once MQTT is ONLINE */
