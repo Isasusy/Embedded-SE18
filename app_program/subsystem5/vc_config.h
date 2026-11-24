@@ -142,7 +142,7 @@
 #define SCAN_SETTLE_MS		40		/* after the glide reaches an angle, wait this long before pinging */
 #define SERVO_US_MIN		500		/* SG90 pulse widths */
 #define SERVO_US_MAX		2500
-#define SERVO_TRIM_DEG		(-20)		/* adjust if "straight ahead" is not 0 (+ = turn left / anticlockwise, - = right / clockwise).
+#define SERVO_TRIM_DEG		(-25)		/* adjust if "straight ahead" is not 0 (+ = turn left / anticlockwise, - = right / clockwise).
 						   -30: the horn pointed ~30 deg too far left */
 #define SERVO_REVERSE		0		/* 1 = swap left and right if + turns the sensor to the robot's right */
 #define S5_SERVO_TEST		0		/* 1 = at power-up sweep the servo -60..+60..0 and print the distance at each angle,
