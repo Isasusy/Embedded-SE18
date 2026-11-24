@@ -11,14 +11,14 @@
 /* ---- geometry (CALIBRATE) ----
  * MC_TICKS_PER_REV counts the edges the driver decodes per wheel revolution (x4 quadrature on A and B).
  * Calibrate: set S2_DEBUG_PRINT 1, turn one wheel exactly one revolution by hand, read "tick" in the status line. */
-#define MC_WHEEL_DIAM_MM	70.0f
-#define MC_TRACK_MM		350.0f		/* distance between the two wheels' contact points (CALIBRATE) */
+#define MC_WHEEL_DIAM_MM	65.0f
+#define MC_TRACK_MM		375.0f		/* distance between the two wheels' contact points (CALIBRATE) */
 /* Turns are judged by the encoders only: with tyre scrub the car turns LESS than commanded until MC_TRACK_MM is the
    EFFECTIVE track. Calibrate on the dashboard (Turn calibration: spin 360, enter what it really turned), then copy
    the value it shows here so it survives a reboot. Run-time limits for "cal track=": */
 #define MC_TRACK_MIN_MM		120.0f
-#define MC_TRACK_MAX_MM		350.0f
-#define MC_TICKS_PER_REV	860.0f		/* measured by hand: ~830-890 per revolution (verify with a 1 m push test) */
+#define MC_TRACK_MAX_MM		375.0f
+#define MC_TICKS_PER_REV	1700.0f		/* measured by hand: ~830-890 per revolution (verify with a 1 m push test) */
 
 /* ---- speeds (mm/s) ---- */
 #define MC_DEFAULT_SPEED	150.0f		/* used when GO / MOVE carries speed 0 */
