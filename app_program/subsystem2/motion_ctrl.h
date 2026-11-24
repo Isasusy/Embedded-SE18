@@ -52,10 +52,9 @@ typedef struct {
 	float		steer_mm_s;		/* line_status_t.steering_corr                                */
 	bool		stop_bit;		/* FLG_MOTION_STOP currently set                              */
 	bool		reset;			/* FLG_MOTION_RESET currently set                             */
-	float		dt_s;			/* ADDED: real time since the last call, s (0 = MC_PERIOD_MS).
-						   The kernel tick is 10 ms, so the "10 ms" loop really runs every
-						   10-20 ms; dividing by a fixed 10 ms read the speed up to 2x too
-						   high and the PI starved the motors (jerky, uneven wheels). */
+	float		dt_s;			/* real time since the last call, s (0 = MC_PERIOD_MS).
+						   The loop can run late (tick rounding, other tasks), so speed must
+						   be divided by the real time, not MC_PERIOD_MS. */
 } mc_in_t;
 
 typedef struct {

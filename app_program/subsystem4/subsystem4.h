@@ -3,8 +3,6 @@
  *	Subsystem 4 -- IMU and terrain monitoring.  Student ID: 2501101.
  *
  *	Public interface of subsystem 4. Other subsystems include it as "../subsystem4/subsystem4.h".
- *
- *	Replaces the template's example "Monitor" subsystem (and its IF-03 / IF-04 / IF-05 rows).
  */
 
 #ifndef SUBSYSTEM4_H
@@ -38,7 +36,7 @@ IMPORT ID	mbf_imu_evt;
 #define FLG_IMU_RESET		0x0001
 #define FLG_IMU_READY		0x0002
 #define FLG_IMU_ALIVE		0x0004
-#define FLG_IMU_TILTED		0x0008	/* ADDED: set while the car is tipped / held tilted (IMU_TILT_STOP_DEG),
+#define FLG_IMU_TILTED		0x0008	/* set while the car is tipped / held tilted (IMU_TILT_STOP_DEG),
 					   cleared when level again (IMU_TILT_CLEAR_DEG). VC reads it, never clears it. */
 IMPORT ID	flg_imu;
 
@@ -71,7 +69,7 @@ typedef struct {		/* snapshot for the bench status line and the tests */
 IMPORT IMU_DEBUG	s4_imu_debug;
 
 /* ------------------------------------------------------------------------------------------
- * ADDED  S4 -> S1 (telemetry) : the last finished hump, for MQTT topic robot/se18/hump.
+ * S4 -> S1 (telemetry) : the last finished hump, for MQTT topic robot/se18/hump.
  *        Seqlock like s5_profile: imu_task makes s4_hump_seq odd, writes, makes it even again.
  *        S1 copies the record and uses it only if the counter was even and unchanged; s4_hump_seq / 2 = humps since boot.
  *        Each hump is sent once the moment it is measured, so a later mission RESET (which clears the running

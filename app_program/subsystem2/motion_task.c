@@ -112,7 +112,7 @@ void motion_task(INT stacd, void *exinf)
 		in.dticks_r = (int)(enc_r - last_r);
 		last_l = enc_l;
 		last_r = enc_r;
-		/* the real time those edges took: the kernel tick is 10 ms, so the loop runs every 10-20 ms, not 10 */
+		/* the real time those edges took: the loop can run late, so never assume exactly 10 ms */
 		in.dt_s = (float)(uint32_t)(t0 - t_enc) * 1e-6f;
 		t_enc = t0;
 

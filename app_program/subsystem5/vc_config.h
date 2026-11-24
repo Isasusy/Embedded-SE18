@@ -51,11 +51,11 @@
 /* ---- obstacle handling: STOP -> CONFIRM (still?) -> PROFILE sweep -> BYPASS -> rejoin the line ---- */
 #ifndef VC_OBST_BYPASS
 #define VC_OBST_BYPASS		1		/* 1 = go round a still obstacle (bench and mission). 0 = profile it, then
-						   only wait until it has gone (the old bench behaviour) */
+						   only wait until it has gone */
 #endif
 #define VC_OBST_STILL_MS	2000		/* an obstacle must stay in front, at a steady distance, this long before the
 						   car profiles it and goes round it */
-#define VC_OBST_STILL_TOL_MM	40		/* "steady": tracked distance stays within this band (else the 5 s restart) */
+#define VC_OBST_STILL_TOL_MM	40		/* "steady": tracked distance stays within this band (else the wait restarts) */
 #define VC_OBST_CLEAR_MS	800		/* nothing close for this long while stopped = it has gone: drive on */
 
 /* ---- obstacle bypass geometry (CALIBRATE on the robot) ---- */
@@ -91,7 +91,7 @@
 #endif
 
 /* 1 = an IMU IMPACT (sudden shock, IMU_SHOCK_G) stops the car with FAULT_IMPACT. 0 = ignored: the IMU still detects and
-   prints it (">> IMPACT"), the car keeps driving. Set 0 by the team (23 Nov): the car's own jolts kept stopping it. */
+   prints it (">> IMPACT"), the car keeps driving. 0 because the car's own jolts kept stopping it. */
 #ifndef VC_STOP_ON_IMPACT
 #define VC_STOP_ON_IMPACT	0
 #endif
@@ -120,14 +120,12 @@
 #define SCAN_TRACK_CLEAR_PINGS	4		/* after a hit the servo stays on the obstacle until this many clear pings in a row */
 #define SCAN_NEAR_MM		400		/* a ray shorter than this belongs to the obstacle */
 #define SCAN_SIDE_TIE_MM	30		/* sides this close in free space count as equal: take the shorter detour */
-#define SCAN_BEAM_HALF_DEG	15		/* HC-SR04 beam half-width: each edge is pulled in by this. Was 7: on the robot
-						   (23 Nov) a box at 104 mm echoed from servo 45 to 125 deg (80 deg), i.e. a
-						   beam of ~15 deg each side. The route is planned on the corrected width.
+#define SCAN_BEAM_HALF_DEG	15		/* HC-SR04 beam half-width: each edge is pulled in by this.
+						   The route is planned on the corrected width.
 						   CALIBRATE: profile a box of known width; raise this if it reads too wide */
 #ifndef SCAN_PLAN_WIDTH_PCT
 #define SCAN_PLAN_WIDTH_PCT	150		/* the route is planned round an obstacle this % of the beam-corrected width,
-						   centred on it, with the same depth. Was 200 (on the uncorrected width):
-						   every real obstacle then needed > 2 m of free space and was never passed */
+						   centred on it, with the same depth */
 #endif
 #define SCAN_SIDE_MARGIN_MM	40		/* gap between the car's side and the planned obstacle while passing it */
 #define SCAN_DEPTH_MIN_MM	80		/* planned depth (= planned width) is clamped to this range */
@@ -142,8 +140,7 @@
 #define SCAN_SETTLE_MS		40		/* after the glide reaches an angle, wait this long before pinging */
 #define SERVO_US_MIN		500		/* SG90 pulse widths */
 #define SERVO_US_MAX		2500
-#define SERVO_TRIM_DEG		(-25)		/* adjust if "straight ahead" is not 0 (+ = turn left / anticlockwise, - = right / clockwise).
-						   -30: the horn pointed ~30 deg too far left */
+#define SERVO_TRIM_DEG		(-25)		/* adjust if "straight ahead" is not 0 (+ = turn left / anticlockwise, - = right / clockwise) */
 #define SERVO_REVERSE		0		/* 1 = swap left and right if + turns the sensor to the robot's right */
 #define S5_SERVO_TEST		0		/* 1 = at power-up sweep the servo -60..+60..0 and print the distance at each angle,
 						   to set SERVO_TRIM_DEG / SERVO_REVERSE. Set 0 when it points correctly. */

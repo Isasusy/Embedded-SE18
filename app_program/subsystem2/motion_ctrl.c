@@ -150,7 +150,7 @@ void mc_step(mc_t *m, const mc_in_t *in, mc_out_t *out)
 {
 	bool fault_new = false;
 	bool reset_used = false;
-	/* the real loop time (10-20 ms with the kernel's 10 ms tick); a missing or absurd value falls back to MC_PERIOD_MS */
+	/* the real loop time (it can run late); a missing or absurd value falls back to MC_PERIOD_MS */
 	const float dt = (in->dt_s > 0.001f && in->dt_s < 0.5f) ? in->dt_s : DT;
 
 	float dl = (float)in->dticks_l * MM_PER_TICK;

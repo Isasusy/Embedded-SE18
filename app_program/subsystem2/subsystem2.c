@@ -51,9 +51,8 @@ EXPORT ER subsystem2_start(void)
 {
 	/* enc_task stays on core 0 (TP_PRC1): it sets up the encoder edge interrupt there, and an interrupt pre-empts any
 	   task, so counting is never held up. motion_task runs on core 1 (TP_PRC2), away from the kernel's WiFi service
-	   task (cyw43_utk_task: priority 4, core 0, polls every 2 ms). Sharing core 0 with it, the control loop was held up
-	   for up to 147 ms whenever WiFi / MQTT was busy, the wheels kept their old power and the car lurched (23 Nov).
-	   It only reads the encoder counts (aligned 32-bit, safe across cores) and writes the PWM registers. */
+	   task (cyw43_utk_task: priority 4, core 0, polls every 2 ms), which holds up a core-0 control loop whenever
+	   WiFi / MQTT is busy. It only reads the encoder counts (aligned 32-bit, safe across cores) and writes the PWM registers. */
 	ID tid = app_start_task(enc_task, S2_PRI_ENC, TP_PRC1, "enc_task");
 	if (tid < E_OK) return tid;
 	tid = app_start_task(motion_task, S2_PRI_MOTION, TP_PRC2, "motion_task");

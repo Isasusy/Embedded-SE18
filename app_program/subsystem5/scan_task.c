@@ -240,8 +240,7 @@ void scan_task(INT stacd, void *exinf)
 		}
 
 		/* No echo for a while only means nothing is in range (an open track). The wiring search runs ONCE, at
-		   power-up in ultra_init(): running it here, while driving, busy-waited ~1 s with no obstacle watch and
-		   drove unclaimed pins as outputs. */
+		   power-up in ultra_init(): here it would busy-wait ~1 s with no obstacle watch and drive unclaimed pins. */
 		no_echo = (last_d <= 0) ? no_echo + 1 : 0;
 #if S5_ULTRA_PRINT
 		if (++n_ping % 10 == 0) {

@@ -62,7 +62,7 @@ void line_task(INT stacd, void *exinf)
 
 	for (;;) {
 		line_adc_read(&l, &r);
-		/* real time since the last sample: with the 10 ms kernel tick this "5 ms" loop runs every 10-20 ms, and the
+		/* real time since the last sample: this "5 ms" loop can run late (tick rounding, other tasks), and the
 		   steering ramp / hold / junction timers must count real time, not samples */
 		uint32_t t_now = S3_US32();
 		unsigned dt_ms = (unsigned)((uint32_t)(t_now - t_prev) + 500u) / 1000u;

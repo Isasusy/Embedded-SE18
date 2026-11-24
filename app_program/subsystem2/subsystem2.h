@@ -3,7 +3,6 @@
  *	Subsystem 2 -- Motion Control (Student ID 2500297 per the design review).
  *
  *	Public interface of subsystem 2.  Other subsystems include it as "../subsystem2/subsystem2.h".
- *	Replaces the template's example Producer (sem_slots / mpf_samples / SAMPLE_MSG are gone).
  */
 #ifndef SUBSYSTEM2_H
 #define SUBSYSTEM2_H

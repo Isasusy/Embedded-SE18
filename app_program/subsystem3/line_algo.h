@@ -35,7 +35,7 @@ typedef struct {
 
 void la_init(la_t *a);
 void la_step(la_t *a, int raw_l, int raw_r, la_out_t *out);	/* LINE_PERIOD_MS per call */
-/* the same with the REAL time since the last call: line_task runs every 10-20 ms (kernel tick 10 ms), not every
+/* the same with the REAL time since the last call: line_task can run late, not exactly every
    LINE_PERIOD_MS, and every timer in here (calibration, junction, hold, ramp) must count real time */
 void la_step_dt(la_t *a, int raw_l, int raw_r, unsigned dt_ms, la_out_t *out);
 

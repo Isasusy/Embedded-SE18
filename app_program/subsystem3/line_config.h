@@ -28,15 +28,14 @@
 #define LINE_STRADDLE		1
 #define LINE_STEER_TOWARD_BLACK	1
 /* Curves: the line only grazes a sensor, so the proportional steer alone is too weak and the car runs wide.
-   LINE_STEER_MIN: as soon as ONE sensor touches the line (above LINE_STEER_ENGAGE), steer at least this hard (mm/s of wheel-speed difference).
    LINE_STEER_HOLD_*: when the sensor leaves the line again, keep steering the same way for a moment, fading out,
    so a curve is followed smoothly instead of going straight the instant the sensor goes white. */
 #define LINE_STEER_ENGAGE	0.25f		/* a sensor reading above this (0 white .. 1 black) counts as touching the line for steering */
-/* Ramped steering (23 Nov: the car over-corrected and weaved after every drift). While ONE sensor touches the line the
+/* Ramped steering, so the car does not over-correct and weave after every drift. While ONE sensor touches the line the
    correction starts gentle and grows with the time it has been touching: a small drift is corrected softly and released
    before it overshoots; on a curve the sensor stays on the line and the steer builds up to LINE_STEER_MAX.
    The build-up fades (LINE_STEER_DECAY) rather than resets while both sensors are white, so a curve that touches the
-   line again and again keeps its steer. All times are REAL ms (the task runs every 10-20 ms, not LINE_PERIOD_MS). */
+   line again and again keeps its steer. All times are REAL ms (the task can run late, so samples are not exactly LINE_PERIOD_MS apart). */
 #define LINE_STEER_START	40.0f		/* mm/s of wheel-speed difference the moment a sensor touches the line */
 #define LINE_STEER_RAMP		600.0f		/* ... growing by this many mm/s per second while it stays on the line */
 #define LINE_STEER_MAX		180.0f		/* ... up to this (keep below MC_STEER_MAX 200) */
@@ -44,7 +43,7 @@
 #define LINE_STEER_MIN		LINE_STEER_START	/* (old name) */
 #define LINE_STEER_HOLD_MS	120
 #define LINE_STEER_HOLD_GAIN	0.3f		/* after the sensor leaves the line keep this fraction of the steer, fading to 0
-						   over LINE_STEER_HOLD_MS (was 0.7 / 200 "5 ms" samples = 0.4-0.8 s real) */
+						   over LINE_STEER_HOLD_MS */
 #define LINE_FOUND_QUIET_MS	100		/* both white this long before a black sensor counts as "line found" */
 #define LINE_FOUND_HOLDOFF_MS	500		/* at most one LINE_FOUND per this time */
 
@@ -62,14 +61,13 @@
 #define BAR_LINE_PEAK		1400		/* "dark" = the stripe's peak reading is at least this (thick bars and the line ~2300+) */
 #define BAR_DIP_MIN		1000		/* a "white" that never got lighter than this is only a dip inside one dark bar */
 #define BAR_LEN_SPLIT_RATIO	1.5f		/* bars are split into thin / thick where their sorted durations jump by at least
-						   this factor (Code 39: wide = 2-3 x narrow; 12 Nov bench: 140 -> 380 ms = 2.7x) */
+						   this factor (Code 39: wide = 2-3 x narrow) */
 #define BAR_DIP_LEVEL_PCT	75		/* a "space" whose lightest reading stays this far (%) from white toward the dark
-						   bars is a flicker inside one bar and is merged into it (12 Nov: dips ~3000-3500,
-						   real spaces ~200, bars ~3700) */
+						   bars is a flicker inside one bar and is merged into it */
 #define BAR_ALLOW_BAD_GUARD	1		/* 1 = accept a code when ONE of its two '*' is unreadable but the other '*' and the
-						   letter are valid (12 Nov: the first '*' was misread while the car steered) */
+						   letter are valid */
 #define S3_BARCODE_DUMP		1		/* 1 = after a read that does not decode, print every stripe's duration and peak,
-						   so the real course barcode can be worked out from the log on the day */
+						   so the real course barcode can be worked out from the log */
 #define BAR_PEAK_SPLIT		600		/* thin and thick bars are told apart by how dark they get (thin ~300, thick ~2400)
 						   when the darkest and lightest bar differ by at least this much */
 #define BAR_END_FACTOR		4		/* the read ends when white lasts this many times the widest BLACK bar ... */

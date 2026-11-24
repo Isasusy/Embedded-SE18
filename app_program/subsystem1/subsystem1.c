@@ -53,15 +53,14 @@ EXPORT void s1_service(s1_publish_fn publish, void *ctx, uint32_t now_ms)
 	static uint32_t last_hb_ms, hb_seq;
 	static bool hb_started;
 	static unsigned map_sent_ver;
-	static uint32_t map_sent_ms;
 	static bool map_sent;
 
 	s1_online_count++;
 
-	/* the barcode direction table: on every change, and every 5 s so a dashboard opened later sees it */
+	/* the barcode direction table: once when MQTT first connects, then only when it changes */
 	{
 		unsigned v = bd_map_version();
-		if (!map_sent || v != map_sent_ver || (uint32_t)(now_ms - map_sent_ms) >= 5000u) {
+		if (!map_sent || v != map_sent_ver) {
 			int8_t tab[BD_MAP_N];
 			static char mbuf[400];
 			bd_map_copy(tab);
@@ -69,7 +68,6 @@ EXPORT void s1_service(s1_publish_fn publish, void *ctx, uint32_t now_ms)
 			if (n > 0 && publish(ctx, S1_TOPIC_BARCODE_MAP, mbuf, n) == 0) {
 				map_sent = true;
 				map_sent_ver = v;
-				map_sent_ms = now_ms;
 			}
 		}
 	}

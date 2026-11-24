@@ -53,9 +53,7 @@ static float side_clear(const int *ang, const int *dist, int n, int start, int d
    3. Turn back by -t: parallel to the original path, its side SCAN_SIDE_MARGIN_MM clear of the planned obstacle.
    4. Drive on (pass_mm) until the axle is R beyond the planned back face (y = Y + depth + R): the whole car has passed
       it and can spin toward the line without touching it.
-   5. Line finding: turn -t toward the line and creep until a sensor finds it.
-   (Until 23 Nov step 2 went all the way past the back face on the diagonal and there was no step 4: at the steep
-   angles a close obstacle needs, that leg went over 2 m sideways, so no real obstacle ever had room for it.) */
+   5. Line finding: turn -t toward the line and creep until a sensor finds it. */
 typedef struct { int32_t turn_deg, diag_mm, lat_mm, pass_mm; float need_mm; } plan_t;
 
 /* turning circle of the car about its axle: its farthest corner */

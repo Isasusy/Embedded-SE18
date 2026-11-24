@@ -5,8 +5,6 @@
  *	    peak detector (BAR_SWING): works for blurred narrow bars, and for a digital 0/3.3 V sensor too
  *	line_task and barcode_task may run on different cores, so every conversion is taken under a lock.
  *	The edge ring buffer is used ONLY by barcode_task.
- *
- *	No shared-config edit is needed any more: this file sets up the two analog pins itself.
  */
 #ifndef DRV_LINE_H
 #define DRV_LINE_H

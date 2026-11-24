@@ -69,13 +69,13 @@
 #define IMU_CLASS_DEBOUNCE       3         /* samples a new class must persist (30 ms)       */
 #define IMU_PERIODIC_REPORT_MS   500       /* periodic MOTION_CLASS status event, 0 = off    */
 
-/* accel magnitude above this = collision. Was 2.0: on the robot (23 Nov) normal driving - motors starting, hard
-   steering corrections, wheels bumping - gave 2.0-2.6 g and faulted the car seven times in 2.5 minutes. */
+/* accel magnitude above this = collision. Keep it above the 2.0-2.6 g of normal driving (motors starting, hard
+   steering corrections, wheels bumping). */
 #ifndef IMU_SHOCK_G
 #define IMU_SHOCK_G              3.5f
 #endif
-/* 0 = no IMPACT detection at all (team decision, 23 Nov). On the robot the hump's front edge gives ~3.9 g; an IMPACT
-   cancels the hump being measured and pauses the motion classes, so it wiped out hump measurements. 1 = detect. */
+/* 0 = no IMPACT detection at all. The hump's front edge gives ~3.9 g, and an IMPACT cancels the hump being measured
+   and pauses the motion classes. 1 = detect. */
 #ifndef IMU_IMPACT_DETECT
 #define IMU_IMPACT_DETECT        0
 #endif

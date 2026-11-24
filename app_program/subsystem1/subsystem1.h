@@ -1,7 +1,6 @@
 /*
  *	subsystem1.h
  *	Subsystem 1 -- WiFi and MQTT telemetry (Student ID 2503802 per the design review).
- *	Replaces the template's example LED heartbeat (led_task, tid_led, GP19 LED are gone).
  *
  *	TEAM.md rule: NO student task may call cyw43 / lwIP / MQTT. So this subsystem has NO task. Its code runs INSIDE the
  *	kernel's WiFi service task (cyw43_utk_task), called from mqtt_utk.c through two hooks, s1_service() and s1_rx().
@@ -22,7 +21,7 @@ IMPORT ID	mbf_status;
 /* IF-15  S1 -> Vehicle Controller : remote_cmd_t, message buffer owned by S5 (see ../subsystem5/subsystem5.h). */
 IMPORT ID	mbf_remote_cmd;
 
-/* ADDED  S1 -> Vehicle Controller : goes up on every s1_service() call (only made while MQTT is connected).
+/* S1 -> Vehicle Controller : goes up on every s1_service() call (only made while MQTT is connected).
    The VC stays in INIT until it has seen it change recently, so START is only possible with the dashboard live. */
 IMPORT volatile unsigned	s1_online_count;
 

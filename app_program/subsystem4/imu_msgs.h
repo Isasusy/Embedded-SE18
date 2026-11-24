@@ -4,7 +4,6 @@
  *	(Design Review Section 6.6, trimmed to what subsystem 4 uses).
  *
  *	Plain C only (no kernel / Pico headers) so the algorithm builds on a PC for testing.
- *	Fields marked ADDED are small extensions to the 6.6 draft; agree them with the team.
  */
 #ifndef IMU_MSGS_H
 #define IMU_MSGS_H
@@ -27,7 +26,7 @@ typedef enum {
 	IMU_EVT_IMPACT,		/* collision / shock: Vehicle Controller sets STOP       */
 	IMU_EVT_MOTION_CLASS,	/* class changed, or periodic status (turn rate etc.)    */
 	IMU_EVT_SENSOR_FAULT,	/* repeated I2C failure / calibration failure            */
-	IMU_EVT_TILT		/* ADDED: tipped over / picked up and tilted (pitch_deg = tilt angle): VC stops */
+	IMU_EVT_TILT		/* tipped over / picked up and tilted (pitch_deg = tilt angle): VC stops */
 } imu_evt_type_t;
 
 typedef struct {
@@ -35,9 +34,9 @@ typedef struct {
 	float		peak_mm;	/* this hump's estimated height                      */
 	float		max_hump_mm;	/* running maximum since last mission reset (FR9)    */
 	motion_class_t	motion_class;
-	float		turn_rate_dps;	/* ADDED: yaw rate, + = left turn (FR10)             */
-	float		pitch_deg;	/* ADDED: + = nose up                                */
-	float		accel_g;	/* ADDED: accel magnitude (useful on IMPACT)         */
+	float		turn_rate_dps;	/* yaw rate, + = left turn (FR10)                    */
+	float		pitch_deg;	/* + = nose up                                       */
+	float		accel_g;	/* accel magnitude (useful on IMPACT)                */
 	uint32_t	timestamp_ms;
 } imu_evt_t;
 

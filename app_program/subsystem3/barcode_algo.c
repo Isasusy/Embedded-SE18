@@ -100,15 +100,14 @@ static uint32_t median(uint32_t *v, int n)
 /* ---- which bars are thick ----
    Tried in this order until the whole code decodes. Every character must come out as a valid Code 39 character and
    the code must be "*...*", so a wrong guess is rejected and the next method is tried.
-     BAR_BY_LENGTH    sort the bar durations and split them where they jump the most (a 12 Nov bench run: thin bars
-                      99-140 ms, thick 380-519 ms). Any print size and speed, as long as the speed is roughly steady.
+     BAR_BY_LENGTH    sort the bar durations and split them where they jump the most.
+                      Any print size and speed, as long as the speed is roughly steady.
      BAR_BY_LENGTH2   split at the SECOND biggest jump. If the course's bars come in three sizes (thin, medium, thick),
                       the two splits are the two possible meanings of "medium" (counted wide, or counted narrow).
-     BAR_BY_DARKNESS  a blurred thin bar never gets as dark as a thick one (11 Nov 18:48 run: thin ~300, thick ~2400).
+     BAR_BY_DARKNESS  a blurred thin bar never gets as dark as a thick one.
    The first and the last bar of a code are always THIN: the '*' start/stop character begins and ends with a thin bar,
    read in either direction. They are also the least reliable stripes (a slow rise into the first bar, the junction
-   line right after the last), so they are set thin and left out of the split. (That 12 Nov read failed only
-   because the last bar, 118 ms long, got as dark as a thick one.) */
+   line right after the last), so they are set thin and left out of the split. */
 typedef enum { BAR_BY_LENGTH, BAR_BY_LENGTH2, BAR_BY_DARKNESS, BAR_N_METHODS } bar_method_t;
 static const char *const method_name[] = { "bar length", "bar length, 2nd split", "bar darkness", "element widths" };
 
@@ -164,7 +163,7 @@ static bool classify_bars(int method, const uint32_t *w, const int16_t *pk, int 
    but its centre stays put. Each character has exactly 3 wide elements, so 2 thick bars -> 1 wide space. */
 /* `tolerant`: accept the code when ONE of the two '*' start/stop characters is unreadable, as long as the other '*'
    and every character between them are valid (*damaged is then set). The '*' only marks the ends; the letter is
-   what matters, and the first '*' is where a read most often goes wrong (12 Nov: the car was steering onto it). */
+   what matters, and the first '*' is where a read most often goes wrong. */
 static bool try_decode_bars(const uint32_t *w, const bool *thickbar, int n, char *text, bool *wide_out,
 			    bool tolerant, bool *damaged)
 {
@@ -251,8 +250,8 @@ static bool try_decode(const uint32_t *w, int n, char *text, bool tolerant, bool
 	return t > 0;
 }
 
-/* Dark fragments (12 Nov bench log): very dark bars (3500-4000) flicker by more than BAR_SWING, so one thick bar came
-   in as up to 13 stripes, the "spaces" between them never getting lighter than ~3000 while real spaces read ~200.
+/* Dark fragments: very dark bars flicker by more than BAR_SWING, so one thick bar can come in as many stripes whose
+   "spaces" never get anywhere near as light as real spaces.
    Any space whose lightest reading stays in the top BAR_DIP_LEVEL_PCT % between white (the lightest space) and dark
    (the upper quartile of the bar peaks) is part of the bar around it: merge it, whatever the stripe count. */
 static void merge_dark_dips(uint32_t *w, int16_t *pk, int *pn)
@@ -285,25 +284,25 @@ static void merge_dark_dips(uint32_t *w, int16_t *pk, int *pn)
 	*pn = o;
 }
 
-/* allow_damaged: accept one unreadable '*' (see try_decode_bars). Off for the EARLY finish in bd_poll: there the code
-   may still be going on, and a letter in the place of the closing '*' would look like a damaged '*'. */
-static bd_result_t decode(const uint32_t *w_in, const int16_t *pk_in, int n, bd_read_t *out, bool allow_damaged)
+/* One decode attempt. merge: first join dark dips back into their bars (see merge_dark_dips); tol: accept one
+   unreadable '*'. out->n_elements is always the raw count; the pattern is of the stripes actually tried. */
+static bd_result_t decode_pass(const uint32_t *w_in, const int16_t *pk_in, int n, bd_read_t *out, bool merge, bool tol)
 {
 	memset(out, 0, sizeof *out);
 	out->nav = -1;
 	out->n_elements = n;
 
-	/* Too many stripes for whole characters? A "white" that stayed dark (a shallow dip, seen on 11 Nov as 99 ms
-	   that only got down to 2173) split one bar in two: merge it back, darkest dip first. */
+	/* Too many stripes for whole characters? A "white" that stayed dark (a shallow dip) split one bar
+	   in two: merge it back, darkest dip first. */
 	static uint32_t w[BAR_MAX_ELEMENTS];		/* static: big, and only the barcode task decodes */
 	static int16_t pkm[BAR_MAX_ELEMENTS];
 	const int16_t *pk = pk_in ? pkm : NULL;
 	for (int i = 0; i < n; i++) { w[i] = w_in[i]; pkm[i] = pk_in ? pk_in[i] : -1; }
-	if (pk) merge_dark_dips(w, pkm, &n);
+	if (pk && merge) merge_dark_dips(w, pkm, &n);
 	/* then, if the count still does not fit, the darkest of the remaining dips, one at a time;
 	   only for an ODD count (a code starts and ends with a bar): merging removes 2 stripes, so an even count can never
 	   reach 10k - 1 and would only lose information */
-	while (pk && n >= 31 && n % 2 == 1 && (n + 1) % 10 != 0) {
+	while (pk && merge && n >= 31 && n % 2 == 1 && (n + 1) % 10 != 0) {
 		int dip = -1;
 		for (int i = 1; i < n - 1; i += 2)
 			if (pkm[i] >= BAR_DIP_MIN && (dip < 0 || pkm[i] > pkm[dip])) dip = i;
@@ -331,24 +330,13 @@ static bd_result_t decode(const uint32_t *w_in, const int16_t *pk_in, int n, bd_
 	static uint32_t r[BAR_MAX_ELEMENTS];
 	for (int i = 0; i < n; i++) r[i] = w[n - 1 - i];
 
-	for (int pass = 0; pass < (allow_damaged ? 2 : 1); pass++) {
-		bool tol = (pass == 1), dmg = false;
-		for (int m = 0; m < BAR_N_METHODS; m++) {
-			if (!classify_bars(m, w, pk, n, thick)) continue;
-			for (int i = 0; i < n; i += 2) rthick[i] = thick[n - 1 - i];	/* n is odd here: bars map to bars */
-			for (int dir = 0; dir < 2; dir++) {
-				if (try_decode_bars(dir ? r : w, dir ? rthick : thick, n, out->text, wide, tol, &dmg)) {
-					out->method = method_name[m];
-					out->reversed = dir;
-					out->guard_damaged = dmg;
-					out->nav = nav_of(out->text[0]);
-					return BD_VALID;
-				}
-			}
-		}
+	bool dmg = false;
+	for (int m = 0; m < BAR_N_METHODS; m++) {
+		if (!classify_bars(m, w, pk, n, thick)) continue;
+		for (int i = 0; i < n; i += 2) rthick[i] = thick[n - 1 - i];	/* n is odd here: bars map to bars */
 		for (int dir = 0; dir < 2; dir++) {
-			if (try_decode(dir ? r : w, n, out->text, tol, &dmg)) {
-				out->method = method_name[BAR_N_METHODS];
+			if (try_decode_bars(dir ? r : w, dir ? rthick : thick, n, out->text, wide, tol, &dmg)) {
+				out->method = method_name[m];
 				out->reversed = dir;
 				out->guard_damaged = dmg;
 				out->nav = nav_of(out->text[0]);
@@ -356,7 +344,34 @@ static bd_result_t decode(const uint32_t *w_in, const int16_t *pk_in, int n, bd_
 			}
 		}
 	}
+	for (int dir = 0; dir < 2; dir++) {
+		if (try_decode(dir ? r : w, n, out->text, tol, &dmg)) {
+			out->method = method_name[BAR_N_METHODS];
+			out->reversed = dir;
+			out->guard_damaged = dmg;
+			out->nav = nav_of(out->text[0]);
+			return BD_VALID;
+		}
+	}
 	out->text[0] = 0;
+	return BD_INVALID;
+}
+
+/* allow_damaged: accept one unreadable '*' (see try_decode_bars). Off for the EARLY finish in bd_poll: there the code
+   may still be going on, and a letter in the place of the closing '*' would look like a damaged '*'.
+   When the raw count is already whole characters (10k - 1), the stripes are first tried exactly as read: on a small
+   or blurred barcode a real narrow space between two thick bars never gets very light, and merge_dark_dips would
+   take it for a dip inside one bar and lose two stripes. The merged stripes are still tried next (a real flicker can
+   also leave a whole-character count). Strict reads are tried before tolerant ones. */
+static bd_result_t decode(const uint32_t *w_in, const int16_t *pk_in, int n, bd_read_t *out, bool allow_damaged)
+{
+	bool raw_fits = pk_in && n >= 29 && (n + 1) % 10 == 0;
+	for (int pass = 0; pass < (allow_damaged ? 2 : 1); pass++) {
+		bool tol = (pass == 1);
+		if (raw_fits && decode_pass(w_in, pk_in, n, out, false, tol) == BD_VALID) return BD_VALID;
+		if (decode_pass(w_in, pk_in, n, out, true, tol) == BD_VALID) return BD_VALID;
+	}
+	if (raw_fits) (void)decode_pass(w_in, pk_in, n, out, false, false);	/* report the stripes as read */
 	return BD_INVALID;
 }
 
