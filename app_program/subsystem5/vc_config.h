@@ -53,7 +53,7 @@
 #define VC_OBST_BYPASS		1		/* 1 = go round a still obstacle (bench and mission). 0 = profile it, then
 						   only wait until it has gone (the old bench behaviour) */
 #endif
-#define VC_OBST_STILL_MS	5000		/* an obstacle must stay in front, at a steady distance, this long before the
+#define VC_OBST_STILL_MS	2000		/* an obstacle must stay in front, at a steady distance, this long before the
 						   car profiles it and goes round it */
 #define VC_OBST_STILL_TOL_MM	40		/* "steady": tracked distance stays within this band (else the 5 s restart) */
 #define VC_OBST_CLEAR_MS	800		/* nothing close for this long while stopped = it has gone: drive on */
