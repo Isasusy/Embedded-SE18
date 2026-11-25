@@ -10,9 +10,9 @@
    drives on if the way clears within VC_OBST_STILL_MS, else profiles it and goes round it: see VC_OBST_BYPASS),
    a remote STOP, a stalled wheel or a dead subsystem. 0 = the full mission (set 0 at integration). */
 #ifndef VC_BENCH_LINE_ONLY
-#define VC_BENCH_LINE_ONLY	1
+#define VC_BENCH_LINE_ONLY	0
 #endif
-#define VC_BENCH_BARCODES	1		/* bench: still act on barcodes: remember one, turn at the next junction */
+#define VC_BENCH_BARCODES	0		/* bench: still act on barcodes: remember one, turn at the next junction */
 #define VC_BENCH_SPEED		90		/* mm/s: slow and steady */
 #define VC_BENCH_RETRY_MS	1500		/* bench: after a stalled-wheel fault, reset and drive on again after this long */
 #if VC_BENCH_LINE_ONLY
@@ -144,7 +144,7 @@
 #define SERVO_REVERSE		0		/* 1 = swap left and right if + turns the sensor to the robot's right */
 #define S5_SERVO_TEST		0		/* 1 = at power-up sweep the servo -60..+60..0 and print the distance at each angle,
 						   to set SERVO_TRIM_DEG / SERVO_REVERSE. Set 0 when it points correctly. */
-#define S5_ULTRA_PRINT		1		/* 2 Hz "[S5] ultra=... mm" line while watching; 0 at integration */
+#define S5_ULTRA_PRINT		0		/* 2 Hz "[S5] ultra=... mm" line while watching; 0 at integration */
 
 #define S5_DEBUG_PRINT		1
 #endif

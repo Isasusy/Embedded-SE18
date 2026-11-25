@@ -19,7 +19,7 @@
 bool	line_adc_init(void);				/* once, from subsystem3_init; false = ADC not ready (readings stay 0) */
 void	line_adc_read(int *left, int *right);		/* 12-bit counts */
 
-typedef struct { uint32_t t_us; bool black; int peak; } bar_edge_t;	/* peak = darkest/lightest reading of the stripe that just ended */
+typedef struct { uint32_t t_us; int32_t pos; bool black; int peak; } bar_edge_t;	/* pos = s3_odo_units() at the edge, peak = darkest/lightest reading of the stripe that just ended */
 void	barcode_init(void);				/* GP28 as an analog input */
 int	barcode_raw(void);				/* last GP28 reading, 0..4095 (for the log) */
 bool	barcode_is_black(void);

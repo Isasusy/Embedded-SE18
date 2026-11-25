@@ -62,7 +62,7 @@ void barcode_task(INT stacd, void *exinf)
 					  (int)((e.t_us - prev_us) / 1000u), e.peak);
 			prev_us = e.t_us;
 #endif
-			bd_edge_p(&b, e.t_us, e.black, e.peak);
+			bd_edge_pos(&b, e.t_us, e.pos, e.black, e.peak);
 		}
 		bd_result_t r;
 		if (s3_bar_finish_req) {
@@ -74,9 +74,9 @@ void barcode_task(INT stacd, void *exinf)
 		s3_bar_active = b.active;
 		if (r == BD_VALID) {
 			keep(&rd, true);
-			S3_PRINTF("[S3] >> BARCODE \"%s\" -> %s%s%s  (pattern %s, narrow %d ms, by %s)\n", rd.text, nav_name(rd.nav),
+			S3_PRINTF("[S3] >> BARCODE \"%s\" -> %s%s%s  (pattern %s, narrow %d ms, by %s, %s widths)\n", rd.text, nav_name(rd.nav),
 				  rd.reversed ? " (read backwards)" : "", rd.guard_damaged ? " (one * damaged)" : "",
-				  rd.pattern, (int)(rd.narrow_us / 1000u), rd.method ? rd.method : "?");
+				  rd.pattern, (int)(rd.narrow_us / 1000u), rd.method ? rd.method : "?", rd.by_distance ? "distance" : "time");
 			if (rd.nav >= 0 && mbf_nav_cmd > 0) {
 				nav_cmd_t m = { rd.nav, (int32_t)rd.text[0], s3_now_ms() };
 				tk_snd_mbf(mbf_nav_cmd, &m, sizeof m, TMO_POL);
@@ -90,7 +90,8 @@ void barcode_task(INT stacd, void *exinf)
 			   so the real barcode's thin / medium / thick sizes can be read off the log */
 			for (int i = 0; i < b.n; i++) {
 				if (i % 10 == 0) S3_PRINTF("%s[S3]   stripes %d-%d:", i ? "\n" : "", i, i + 9 < b.n ? i + 9 : b.n - 1);
-				S3_PRINTF(" %c%d:%d", (i % 2 == 0) ? 'B' : 's', (int)(b.w[i] / 1000u), (int)b.pk[i]);
+				S3_PRINTF(" %c%d:%d:%dmm", (i % 2 == 0) ? 'B' : 's', (int)(b.w[i] / 1000u), (int)b.pk[i],
+					  (int)((float)b.d[i] * S3_ODO_MM_PER_UNIT + 0.5f));
 			}
 			if (b.n > 0) S3_PRINTF("\n");
 #endif

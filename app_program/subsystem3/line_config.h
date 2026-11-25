@@ -59,9 +59,14 @@
 #define BAR_MAX_US		2000000		/* a DARK stripe longer than this (180 mm at 90 mm/s) is the line or a junction */
 #define BAR_MAX_WEAK_US		3000000		/* any black longer than this: read dropped */
 #define BAR_LINE_PEAK		1400		/* "dark" = the stripe's peak reading is at least this (thick bars and the line ~2300+) */
-#define BAR_DIP_MIN		1000		/* a "white" that never got lighter than this is only a dip inside one dark bar */
-#define BAR_LEN_SPLIT_RATIO	1.5f		/* bars are split into thin / thick where their sorted durations jump by at least
-						   this factor (Code 39: wide = 2-3 x narrow) */
+#define BAR_DIP_MIN_PCT		25		/* when the stripe count still does not fit, a "white" that stays this far (%) from
+						   the read's white toward its dark bars is only a dip inside one dark bar */
+#define BAR_RATIO_MIN		2.0f		/* wide:narrow ratios the per-character fit tries (Code 39 allows 2 to 3); the */
+#define BAR_RATIO_MAX		3.0f		/* one that fits the whole read best is used                                  */
+#define BAR_FIT_MAX		0.15f		/* a character whose best fit still has more error than this (relative to its
+						   narrow width) is unreadable; lower = less noise taken for a code, more failed reads */
+#define BAR_FIT_MARGIN		0.02f		/* ... or whose second-best character fits almost as well (cost within this):
+						   raise = fewer wrong letters, more failed reads */
 #define BAR_DIP_LEVEL_PCT	75		/* a "space" whose lightest reading stays this far (%) from white toward the dark
 						   bars is a flicker inside one bar and is merged into it */
 #define BAR_ALLOW_BAD_GUARD	1		/* 1 = accept a code when ONE of its two '*' is unreadable but the other '*' and the
@@ -79,7 +84,15 @@
    so a narrow bar or gap never reaches full black or full white. Instead of a fixed threshold the reading is
    followed like a peak detector: BLACK starts when it rises BAR_SWING above the lowest value since the last
    change, WHITE starts when it falls BAR_SWING below the highest. Small blurred swings still count. */
-#define BAR_SWING		70 		/* ADC counts; raise if the stripe trace shows noise, lower if bars are missed */
+#define BAR_SWING		110 		/* ADC counts; raise if the stripe trace shows noise, lower if bars are missed */
+#define BAR_SWING_PCT		10		/* ... or this % of the recent white-to-dark range, if larger. A small barcode keeps the
+						   reading mid-range where noise is worst, so a fixed swing makes extra stripes.
+						   0 = off (fixed BAR_SWING only); lower if narrow stripes of small barcodes go missing */
+#define BAR_SENSOR_Y_MM		0.0f		/* IR3 lateral offset from the midpoint between the wheels, mm, left positive */
+#define BAR_DIST_MIN		2		/* fewest encoder units (half ticks) a stripe may span for distance widths */
+#define BAR_DIP_LOCAL_PCT	35		/* when the stripe count does not fit whole characters, a stripe whose contrast with
+						   its two neighbours is below this % of the read's typical (median) contrast is
+						   noise and is merged into them. 0 = off */
 
 /* The course barcode sits BESIDE the line (20 mm gap), so the line sensors never see its bars: both line sensors
    black is always a junction (or the car lifted, below). A junction that arrives while a barcode read is still open
@@ -90,7 +103,7 @@
 						   the floor clears it. Must be longer than the car takes to cross a junction's black
 						   tape, in case black ever reads above LINE_LIFTED_ADC. 0 = lift detection off */
 #endif
-#define S3_BARCODE_TRACE	1		/* 1 = print every stripe the barcode sensor sees (colour and ms); 0 later */
+#define S3_BARCODE_TRACE	0		/* 1 = print every stripe the barcode sensor sees (colour and ms); 0 later */
 
 /* Start-up defaults only: the dashboard can change any letter's direction over MQTT (barcode_algo.h, bd_map_*) */
 #define BAR_CHAR_LEFT		'A'

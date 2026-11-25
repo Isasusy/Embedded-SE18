@@ -27,8 +27,11 @@ typedef struct {
 	bool		active;				/* inside a barcode */
 	bool		black;				/* level of the element being timed */
 	uint32_t	t_start;			/* when that element started */
+	int32_t		p_start;			/* odometer at that start */
+	bool		pos_ok;				/* d[] is valid */
 	int		n;				/* completed elements */
 	uint32_t	w[BAR_MAX_ELEMENTS];		/* their widths, us: bar, space, bar, ... */
+	uint32_t	d[BAR_MAX_ELEMENTS];		/* the same widths in odometer units */
 	int16_t		pk[BAR_MAX_ELEMENTS];		/* their peak reading (darkest for a bar), -1 = unknown */
 	uint32_t	widest;				/* widest black bar so far */
 	uint32_t	narrowest;			/* narrowest black bar so far */
@@ -44,6 +47,7 @@ typedef struct {
 	char		pattern[BAR_MAX_ELEMENTS + 12];	/* 'W' wide / 'n' narrow, a space between characters */
 	uint32_t	narrow_us;			/* typical narrow element, for the log */
 	const char	*method;			/* how the thick bars were found (for the log), NULL if not decoded */
+	bool		by_distance;			/* decoded from d[] rather than w[] */
 	bool		guard_damaged;			/* decoded although one '*' start/stop character was unreadable */
 } bd_read_t;
 
@@ -54,6 +58,9 @@ void		bd_init(bd_t *b);
    just ended, or -1 if unknown. Never completes a read (the quiet zone after the code does). */
 void		bd_edge_p(bd_t *b, uint32_t t_us, bool black, int peak);
 void		bd_edge(bd_t *b, uint32_t t_us, bool black);		/* same, peak unknown */
+#define BD_NO_POS	INT32_MIN
+/* same as bd_edge_p, with the odometer reading at the edge (BD_NO_POS = unknown) */
+void		bd_edge_pos(bd_t *b, uint32_t t_us, int32_t pos, bool black, int peak);
 /* call every ~1 ms: when the white after a code has lasted long enough, decodes it into *out.
    BD_VALID = a Code 39 code was read, BD_INVALID = something was read but did not decode (out->pattern says what). */
 bd_result_t	bd_poll(bd_t *b, uint32_t now_us, bd_read_t *out);

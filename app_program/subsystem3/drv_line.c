@@ -84,6 +84,10 @@ static bar_edge_t	s_ring[RING];
 static unsigned		s_head, s_tail, s_over;
 static int		s_last = -1;		/* -1 = not started, 0 = white, 1 = black */
 static volatile int	s_raw;
+#define SWING_HIST	8u			/* recent bar peaks / space troughs used for the adaptive swing */
+static int		s_bar_pk[SWING_HIST], s_spc_pk[SWING_HIST];
+static unsigned		s_bar_i, s_spc_i, s_hist_n;	/* s_hist_n: 0 until the first bar has been seen */
+static int		s_spc_seen = -1;	/* lightest reading of the last space before the history started, -1 = none */
 
 void barcode_init(void)
 {
@@ -104,21 +108,45 @@ void barcode_sample(void)
 #endif
 	if (s_last < 0) { s_last = (v > BAR_ADC_THRESH) ? 1 : 0; ext = v; return; }
 
+	/* the swing needed for an edge: BAR_SWING, or BAR_SWING_PCT % of the recent white-to-dark range if larger.
+	   A small barcode keeps the reading in the middle of the range, where noise is largest; a fixed swing then
+	   turns noise wobbles into extra stripes. */
+	int swing = BAR_SWING;
+	if (s_hist_n > 0) {
+		int hi = -1, lo = 1 << 30;
+		for (unsigned i = 0; i < SWING_HIST; i++) {
+			if (s_bar_pk[i] > hi) hi = s_bar_pk[i];
+			if (s_spc_pk[i] < lo) lo = s_spc_pk[i];
+		}
+		int rel = (BAR_SWING_PCT * (hi - lo)) / 100;
+		if (rel > swing) swing = rel;
+	}
+
 	int level = s_last;
-	if (s_last == 0) {			/* white: follow the minimum, turn black on a rise of BAR_SWING */
+	if (s_last == 0) {			/* white: follow the minimum, turn black on a rise of swing */
 		if (v < ext) ext = v;
-		if (v > ext + BAR_SWING) level = 1;
-	} else {				/* black: follow the maximum, turn white on a fall of BAR_SWING */
+		if (v > ext + swing) level = 1;
+	} else {				/* black: follow the maximum, turn white on a fall of swing */
 		if (v > ext) ext = v;
-		if (v < ext - BAR_SWING) level = 0;
+		if (v < ext - swing) level = 0;
 	}
 	if (level == s_last) return;
 
 	int peak = ext;				/* the extreme of the stripe that just ended */
+	if (level == 0) {			/* a bar ended: remember its peak */
+		if (s_hist_n == 0) for (unsigned i = 0; i < SWING_HIST; i++) s_bar_pk[i] = peak;
+		s_bar_pk[s_bar_i++ % SWING_HIST] = peak;
+		if (s_hist_n == 0) for (unsigned i = 0; i < SWING_HIST; i++) s_spc_pk[i] = s_spc_seen >= 0 ? s_spc_seen : peak;
+		s_hist_n = 1;
+	} else {				/* a space ended: remember its lightest reading */
+		s_spc_seen = peak;
+		if (s_hist_n) s_spc_pk[s_spc_i++ % SWING_HIST] = peak;
+	}
 	s_last = level;
 	ext = v;
 	if (s_head - s_tail >= RING) { s_over++; return; }
 	s_ring[s_head % RING].t_us  = t;
+	s_ring[s_head % RING].pos   = s3_odo_units();
 	s_ring[s_head % RING].black = (level == 1);
 #if !BARCODE_BLACK_IS_HIGH
 	peak = 4095 - peak;
