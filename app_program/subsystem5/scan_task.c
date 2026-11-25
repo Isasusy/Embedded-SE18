@@ -16,6 +16,12 @@
 _Static_assert((SCAN_PROFILE_END_DEG - SCAN_PROFILE_START_DEG) / SCAN_PROFILE_STEP_DEG + 1 <= OBST_PROFILE_MAX_RAYS &&
 	       OBST_PROFILE_MAX_RAYS <= SCAN_MAX_RAYS, "profile sweep has more rays than the buffers hold");
 _Static_assert(SCAN_CLOSE_MM < SCAN_NEAR_MM, "an obstacle that stops the car must also count as near in the profile sweep");
+/* every profile angle plus the trim must be reachable: servo_set_deg() clamps at +-SERVO_DEG_LIMIT, and clamped rays
+   would all point the same way while scan_analyze() takes them at their own angles */
+#define S5_ABS(x)	((x) < 0 ? -(x) : (x))
+_Static_assert(S5_ABS(SCAN_PROFILE_START_DEG - SCAN_SERVO_CENTRE_DEG) + S5_ABS(SERVO_TRIM_DEG) <= SERVO_DEG_LIMIT &&
+	       S5_ABS(SCAN_PROFILE_END_DEG - SCAN_SERVO_CENTRE_DEG) + S5_ABS(SERVO_TRIM_DEG) <= SERVO_DEG_LIMIT,
+	       "profile sweep + SERVO_TRIM_DEG goes past SERVO_DEG_LIMIT: those rays would be clamped");
 
 /* Servo angle last commanded (0 = straight ahead, + = left). servo_glide() moves from here one degree at a time, so
    the servo never jumps and does not jolt the sensor or the car. */
@@ -211,6 +217,12 @@ void scan_task(INT stacd, void *exinf)
 			if (close || (hold && held)) {		/* still there: close, or (car stopped for it) within the hold */
 				s5_track_mm = d;
 				tk_set_flg(flg_scan, close ? (FLG_SCAN_CLOSE | FLG_SCAN_PRESENT) : FLG_SCAN_PRESENT);
+				clear_pings = 0;
+			} else if (hold) {
+				/* the car is stopped for this obstacle (confirming, profiling, or backing off 50 mm to profile
+				   again, which takes it past SCAN_HOLD_MM): stay parked on it, so the next sweep starts from its
+				   angle. FLG_SCAN_PRESENT is not set, so the VC still sees it go away; when the VC drives on it
+				   clears the hold and tracking ends after SCAN_TRACK_CLEAR_PINGS as usual. */
 				clear_pings = 0;
 			} else if (++clear_pings >= SCAN_TRACK_CLEAR_PINGS) {
 				tracking = false;

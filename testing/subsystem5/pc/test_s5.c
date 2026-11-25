@@ -143,10 +143,10 @@ int main(void)
 	scan_analyze(ang, d, n, &ob);
 	CHECK(ob.found && ob.side == -1, "left blocked -> choose right (side=%d, L=%.0f R=%.0f)", ob.side, ob.left_clear_mm, ob.right_clear_mm);
 
-	/* 6. the robot's profile sweep: servo 30..150 deg in 5 deg steps = 25 rays, relative -60..+60 */
+	/* 6. the robot's profile sweep: servo 15..165 deg in 5 deg steps = 31 rays, relative -75..+75 */
 	sweep_range(ang, d, &n, 120, 200, 0, SCAN_PROFILE_START_DEG - SCAN_SERVO_CENTRE_DEG,
 		    SCAN_PROFILE_END_DEG - SCAN_SERVO_CENTRE_DEG, SCAN_PROFILE_STEP_DEG);
-	CHECK(n == 25 && ang[0] == -60 && ang[12] == 0 && ang[24] == 60 && n <= OBST_PROFILE_MAX_RAYS, "profile sweep is 25 rays -60..+60 (n=%d)", n);
+	CHECK(n == 31 && ang[0] == -75 && ang[15] == 0 && ang[30] == 75 && n <= OBST_PROFILE_MAX_RAYS, "profile sweep is 31 rays -75..+75 (n=%d)", n);
 	scan_analyze(ang, d, n, &ob);
 	CHECK(ob.found && fabsf(ob.distance_mm - 200) < 10, "profile: found at %.0f mm", ob.distance_mm);
 	CHECK(ob.side != 0 && ob.left_clear_mm > 2 * VC_ROBOT_HALF_W_MM, "profile: a side is free (L=%.0f R=%.0f)", ob.left_clear_mm, ob.right_clear_mm);
@@ -244,7 +244,7 @@ int main(void)
 	   (30 deg) it is */
 	profile(ang, d, &n, 60, 230, +130);
 	{
-		int c0 = 12;					/* index of 0 deg in the 25-ray profile */
+		int c0 = (SCAN_SERVO_CENTRE_DEG - SCAN_PROFILE_START_DEG) / SCAN_PROFILE_STEP_DEG;	/* index of 0 deg */
 		CHECK(ang[c0] == 0 && d[c0] < 0 && d[c0 - 1] < 0 && d[c0 + 1] < 0, "off-centre case: rays at 0 and +-5 deg miss it");
 	}
 	scan_analyze(ang, d, n, &ob);
@@ -256,7 +256,7 @@ int main(void)
 	if (ob.side) route_ok(&ob, "off-centre, from the hit angle");
 	/* 19. the hit-angle ray itself dropped out: a neighbour starts it */
 	{
-		int c30 = 18;					/* index of +30 deg */
+		int c30 = (SCAN_SERVO_CENTRE_DEG + 30 - SCAN_PROFILE_START_DEG) / SCAN_PROFILE_STEP_DEG;	/* index of +30 deg */
 		CHECK(ang[c30] == 30, "index of 30 deg");
 		d[c30] = -1;
 		scan_analyze_from(ang, d, n, 30, &ob);
@@ -544,26 +544,53 @@ int main(void)
 	obstacle_t none = { 0 };
 	tick_ob(&h, false, 0, &none, false, 0);
 	CHECK(h.v.state == VC_LINE_FOLLOW && h.o.motion.type == MOTION_CMD_GO, "scan finds nothing -> resume");
-	/* h. no usable side: mission = FAULT, bench = watch it again and re-profile */
-	tick_ob(&h, true, 200, 0, false, 0);
-	for (int k = 0; k < VC_OBST_STILL_MS / VC_TICK_MS + 1 && !h.o.scan_request; k++) tick_ob(&h, true, 200, 0, false, 0);
-	obstacle_t blocked = { .found = true, .distance_mm = 200, .width_mm = 120, .left_clear_mm = 20, .right_clear_mm = 20, .side = 0 };
-	tick_ob(&h, true, 200, &blocked, false, 0);
-#if VC_BENCH_LINE_ONLY
-	CHECK(h.v.state == VC_OBSTACLE_AVOID && h.v.sub == 0, "bench: no clear side -> confirm again (sub %d)", h.v.sub);
-	scans = 0;
-	for (int k = 0; k < VC_OBST_STILL_MS / VC_TICK_MS + 1; k++) { tick_ob(&h, true, 200, 0, false, 0); scans += h.o.scan_request; }
-	CHECK(scans == 1, "bench: re-profiled once more after %d ms (scans %d)", VC_OBST_STILL_MS, scans);
-	for (int k = 0; k < VC_SCAN_TIMEOUT_MS / VC_TICK_MS + 2; k++) tick_ob(&h, true, 200, 0, false, 0);
-	CHECK(h.v.state == VC_OBSTACLE_AVOID && h.v.sub == 0, "bench: scan timeout -> confirm again");
-#else
-	CHECK(h.v.state == VC_FAULT && h.v.fault == FAULT_OBSTACLE, "no clear side -> FAULT");
+	/* h. no usable side: reverse VC_OBST_RETRY_REVERSE_MM and profile again, VC_OBST_RETRIES times; then
+	   mission = FAULT, bench = watch it again and re-profile. Starts from a fresh run, whatever the sections above left. */
 	tick(&h, &RESET, 0, 0, 0, 0, false, false); idle(&h, 2);
 	tick(&h, &START, 0, 0, 0, 0, false, false);
 	tick_ob(&h, true, 200, 0, false, 0);
 	for (int k = 0; k < VC_OBST_STILL_MS / VC_TICK_MS + 1 && !h.o.scan_request; k++) tick_ob(&h, true, 200, 0, false, 0);
-	for (int k = 0; k < VC_SCAN_TIMEOUT_MS / VC_TICK_MS + 2; k++) tick_ob(&h, false, 0, 0, false, 0);
-	CHECK(h.v.state == VC_FAULT && h.v.fault == FAULT_OBSTACLE, "scan timeout -> FAULT");
+	obstacle_t blocked = { .found = true, .distance_mm = 200, .width_mm = 120, .left_clear_mm = 20, .right_clear_mm = 20, .side = 0 };
+	for (int r = 1; r <= VC_OBST_RETRIES; r++) {
+		tick_ob(&h, true, 200, &blocked, false, 0);
+		CHECK(h.v.state == VC_OBSTACLE_AVOID && h.v.sub == OB_REVERSE && h.o.send_motion && h.o.motion.type == MOTION_CMD_MOVE &&
+		      h.o.motion.distance_mm == -VC_OBST_RETRY_REVERSE_MM && h.o.motion.speed_mm_s == VC_OBST_REVERSE_SPEED &&
+		      h.v.ob_retries == r, "no clear side (try %d) -> reverse %d mm (sub %d, move %d)", r,
+		      VC_OBST_RETRY_REVERSE_MM, h.v.sub, h.o.motion.distance_mm);
+		CHECK(h.o.scan_hold, "reversing (try %d) -> the scan task keeps tracking it", r);
+		tick_ob(&h, true, 200, 0, true, 0);			/* a stale cmd_done during the settle is ignored */
+		CHECK(h.v.sub == OB_REVERSE && !h.o.scan_request, "stale cmd_done during settle -> still reversing (try %d)", r);
+		for (int k = 0; k < VC_SETTLE_TICKS + 5; k++) tick_ob(&h, true, 200, 0, false, 0);
+		CHECK(h.v.sub == OB_REVERSE, "still reversing (try %d): obstacle_close is ignored", r);
+		tick_ob(&h, true, 250, 0, true, 0);
+		CHECK(h.v.state == VC_OBSTACLE_AVOID && h.v.sub == OB_PROFILE && h.o.scan_request && !h.o.send_motion,
+		      "reverse done (try %d) -> profile again at once, no confirm wait (sub %d)", r, h.v.sub);
+	}
+	tick_ob(&h, true, 300, &blocked, false, 0);			/* the last profile also finds no way */
+#if VC_BENCH_LINE_ONLY
+	CHECK(h.v.state == VC_OBSTACLE_AVOID && h.v.sub == 0, "bench: no clear side after %d tries -> confirm again (sub %d)",
+	      VC_OBST_RETRIES, h.v.sub);
+	scans = 0;
+	for (int k = 0; k < VC_OBST_STILL_MS / VC_TICK_MS + 1; k++) { tick_ob(&h, true, 200, 0, false, 0); scans += h.o.scan_request; }
+	CHECK(scans == 1, "bench: re-profiled once more after %d ms (scans %d)", VC_OBST_STILL_MS, scans);
+	tick_ob(&h, true, 200, &blocked, false, 0);
+	CHECK(h.v.sub == 0, "bench: tries used up -> no more reverses for this obstacle (sub %d)", h.v.sub);
+#else
+	CHECK(h.v.state == VC_FAULT && h.v.fault == FAULT_OBSTACLE, "no clear side after %d tries -> FAULT", VC_OBST_RETRIES);
+	tick(&h, &RESET, 0, 0, 0, 0, false, false); idle(&h, 2);
+	/* a new obstacle gets its tries again; the profile never arrives -> reverse and re-profile, then FAULT */
+	tick(&h, &START, 0, 0, 0, 0, false, false);
+	tick_ob(&h, true, 200, 0, false, 0);
+	CHECK(h.v.ob_retries == 0, "new obstacle -> tries restart");
+	for (int k = 0; k < VC_OBST_STILL_MS / VC_TICK_MS + 1 && !h.o.scan_request; k++) tick_ob(&h, true, 200, 0, false, 0);
+	int revs = 0;
+	for (int k = 0; k < (VC_OBST_RETRIES + 1) * (VC_SCAN_TIMEOUT_MS / VC_TICK_MS + 20) && h.v.state == VC_OBSTACLE_AVOID; k++) {
+		bool done = h.v.sub == OB_REVERSE && (k % 5) == 4;
+		tick_ob(&h, false, 0, 0, done, 0);
+		revs += h.o.send_motion && h.o.motion.type == MOTION_CMD_MOVE && h.o.motion.distance_mm == -VC_OBST_RETRY_REVERSE_MM;
+	}
+	CHECK(revs == VC_OBST_RETRIES && h.v.state == VC_FAULT && h.v.fault == FAULT_OBSTACLE,
+	      "scan timeouts -> %d reverses, then FAULT (got %d, state %s)", VC_OBST_RETRIES, revs, vc_state_name(h.v.state));
 #endif
 	tick(&h, &RESET, 0, 0, 0, 0, false, false); idle(&h, 2);
 	/* i. line finding gives up: the creep never reaches the line -> FAULT_LINE_LOST */

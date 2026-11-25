@@ -196,6 +196,14 @@ void vc_task(INT stacd, void *exinf)
 #endif
 		vc_step(&v, &in, &out);
 #if S5_DEBUG_PRINT
+		{	/* no way round yet: say so once, when each reverse starts */
+			static bool rev_on;
+			bool rev = v.state == VC_OBSTACLE_AVOID && v.sub == OB_REVERSE;
+			if (rev && !rev_on)
+				S5_PRINTF("[S5] no way round (try %d of %d): reversing %d mm, then profiling it again\n",
+					  v.ob_retries, VC_OBST_RETRIES, VC_OBST_RETRY_REVERSE_MM);
+			rev_on = rev;
+		}
 		/* avoidance trace: after each step, how far the car really turned and drove (compare with the [S5] plan line) */
 		if (v.state == VC_OBSTACLE_AVOID && (v.sub == OB_BYPASS || v.sub == OB_SEARCH)) {
 			int key = v.sub * 16 + v.step;

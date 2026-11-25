@@ -27,7 +27,7 @@
 #define MC_V_FILTER		0.6f		/* measured-speed low-pass (1 = none); speeds are quantised: few encoder ticks per 10 ms loop */
 
 /* ---- wheel speed PI + feed-forward (output in 1/1000 duty, -1000..1000) ---- */
-#define MC_FF_PWM_MIN		30.0f		/* duty needed just to start the wheel turning (dead band) */
+#define MC_FF_PWM_MIN		10.0f		/* duty needed just to start the wheel turning (dead band) */
 #define MC_FF_PER_MM_S		2.0f		/* duty per mm/s of target speed                           */
 #define MC_KP			1.2f		/* duty per mm/s of speed error                            */
 #define MC_KI			6.0f		/* duty per (mm/s * s)                                     */

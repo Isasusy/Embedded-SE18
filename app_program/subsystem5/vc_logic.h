@@ -5,7 +5,9 @@
  *	A barcode is remembered; its turn is made at the NEXT JUNCTION (drive VC_JUNCTION_ADVANCE_MM, then turn).
  *	An obstacle: STOP, CONFIRM it stays (VC_OBST_STILL_MS at a steady distance; it going away = drive on), PROFILE it
  *	with a servo sweep, AVOID it on the more open side (turn by an angle planned from its width, drive until beside it,
- *	turn back), then LINE FINDING (past it, turn toward the line, creep until found) -> LINE_FOLLOW.
+ *	turn back), then LINE FINDING (past it, turn toward the line, creep until found) -> LINE_FOLLOW. No way round
+ *	(no usable side, or no profile in time): REVERSE VC_OBST_RETRY_REVERSE_MM and PROFILE again, up to
+ *	VC_OBST_RETRIES times; then bench = watch and re-profile, mission = FAULT_OBSTACLE.
  *	INIT -> IDLE -> LINE_FOLLOW <-> BARCODE_ACTION / HUMP_CROSSING / OBSTACLE_AVOID / RECOVER
  *	-> COMPLETE; FAULT from anywhere. A stop or reset can arrive in any state and takes priority.
  */
@@ -17,7 +19,7 @@
 #include "../subsystem4/imu_msgs.h"
 
 /* OBSTACLE_AVOID sub-states (vc_t.sub) */
-enum { OB_CONFIRM, OB_PROFILE, OB_BYPASS, OB_SEARCH, OB_HOLD };
+enum { OB_CONFIRM, OB_PROFILE, OB_BYPASS, OB_SEARCH, OB_HOLD, OB_REVERSE };
 
 typedef struct {
 	/* private */
@@ -29,6 +31,7 @@ typedef struct {
 	int		step, settle;			/* OBSTACLE_AVOID sequence position, settle ticks */
 	int		move_left;			/* OBSTACLE_AVOID: mm of the current MOVE still to send (VC_MOVE_MAX_MM pieces) */
 	int		sub;
+	int		ob_retries;			/* OBSTACLE_AVOID: reverse-and-re-profile tries used on this obstacle */
 	obstacle_t	ob;
 	uint32_t	t_close;			/* OBSTACLE_AVOID: last tick the obstacle was seen close */
 	uint32_t	t_still;			/* OBSTACLE_AVOID: start of the current steady-distance stretch */

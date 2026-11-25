@@ -36,11 +36,12 @@ void servo_set_deg(int deg)
 	deg = -deg;
 #endif
 	deg += SERVO_TRIM_DEG;
-	if (deg < -90) deg = -90;
-	if (deg > 90) deg = 90;
-	/* -90 deg -> SERVO_US_MIN, +90 deg -> SERVO_US_MAX. Mounted so that + is the robot's left; flip here if not. */
-	unsigned us = SERVO_US_MIN + (unsigned)((deg + 90) * (SERVO_US_MAX - SERVO_US_MIN) / 180);
-	pwm_set_cc(PIN_SERVO, (us * 3125u) / 1000u);		/* 3.125 ticks per microsecond */
+	if (deg < -SERVO_DEG_LIMIT) deg = -SERVO_DEG_LIMIT;
+	if (deg > SERVO_DEG_LIMIT) deg = SERVO_DEG_LIMIT;
+	/* -90 deg -> SERVO_US_MIN, +90 deg -> SERVO_US_MAX, the same scale out to +-SERVO_DEG_LIMIT. Mounted so that + is
+	   the robot's left; flip here if not. */
+	int us = SERVO_US_MIN + (deg + 90) * (SERVO_US_MAX - SERVO_US_MIN) / 180;
+	pwm_set_cc(PIN_SERVO, ((unsigned)us * 3125u) / 1000u);	/* 3.125 ticks per microsecond */
 }
 
 void servo_off(void)

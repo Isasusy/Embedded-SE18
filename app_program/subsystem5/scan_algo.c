@@ -193,9 +193,14 @@ void scan_analyze_from(const int *ang, const int *dist, int n, int seed_deg, obs
 	/* a side is usable if nothing echoed on it right out to the sweep's edge (the sweep cannot see further, so its
 	   reach does not limit the route), or if its free space up to the first echo holds that side's route. Of two usable
 	   sides the more open one; if the two are about equal (or both open to the end of the sweep) the one whose edge is
-	   nearer the centre line, so the detour is shorter */
+	   nearer the centre line, so the detour is shorter.
+	   A side the obstacle fills right to the end of the sweep is never usable: no clear ray shows any room there. (Its
+	   scanned edge d * tan(end + step/2) is huge near +-90 deg, which made need_mm negative, so 0 mm of free space
+	   "held" the route: with the +-75 deg sweep a wall across the whole sweep planned a 74 deg turn into it.) */
 	plan_t pl = scan_plan(o, +1), pr = scan_plan(o, -1);
-	bool l_ok = l_open || o->left_clear_mm >= pl.need_mm, r_ok = r_open || o->right_clear_mm >= pr.need_mm;
+	const bool l_fill = lft == n - 1, r_fill = rgt == 0;
+	bool l_ok = !l_fill && (l_open || o->left_clear_mm >= pl.need_mm);
+	bool r_ok = !r_fill && (r_open || o->right_clear_mm >= pr.need_mm);
 	if (!l_ok && !r_ok)
 		o->side = 0;
 	else if (l_ok != r_ok)

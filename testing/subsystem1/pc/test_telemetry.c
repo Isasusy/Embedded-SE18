@@ -63,7 +63,7 @@ int main(void)
 	for (int i = VC_INIT; i <= VC_FAULT; i++) CHECK(strcmp(tm_state_name(i), "UNKNOWN") != 0, "state %d named", i);
 	/* obstacle profile JSON */
 	{
-		char ob[512];
+		char ob[768];
 		obstacle_profile_t p = { 5, { 30, 60, 90, 120, 150 }, { -1, 412, 198, 230, -1 },
 					 { true, 198.4f, 120.6f, 300.2f, 89.5f, +1, 60.3f, -60.3f, 90.0f, -90.0f, 120.6f, 31, 420, 216, 520 }, 98765 };
 		int k = tm_format_obstacle(ob, sizeof ob, &p, 3);
@@ -75,11 +75,11 @@ int main(void)
 		tm_format_obstacle(ob, sizeof ob, &p, 4);
 		CHECK(strstr(ob, "\"found\":false") && strstr(ob, "\"side\":\"NONE\""), "no obstacle JSON: %s", ob);
 		CHECK(tm_format_obstacle(ob, 40, &p, 4) == -1, "obstacle: too small buffer -> -1");
-		/* worst case still fits S1's 512-byte buffer, with the topic and MQTT header, in lwIP's 512-byte MQTT ring */
+		/* worst case still fits S1's 768-byte buffer, with the topic and MQTT header, in lwIP's 768-byte MQTT ring */
 		obstacle_profile_t w = { OBST_PROFILE_MAX_RAYS, {0}, {0}, { true, -99999, -99999, -99999, -99999, -1, -99999, -99999, -99999, -99999, -99999, -99999, -99999, -99999, -99999 }, 4294967295u };
 		for (int i = 0; i < OBST_PROFILE_MAX_RAYS; i++) { w.servo_deg[i] = 150; w.dist_mm[i] = 9999; }
 		k = tm_format_obstacle(ob, sizeof ob, &w, 4294967295u);
-		CHECK(k > 0 && k + 5 + 2 + (int)strlen(S1_TOPIC_OBSTACLE) <= 512, "worst-case obstacle JSON is %d bytes", k);
+		CHECK(k > 0 && k + 5 + 2 + (int)strlen(S1_TOPIC_OBSTACLE) <= 768, "worst-case obstacle JSON is %d bytes", k);
 	}
 	printf("%d checks, %d failed\n", checks, fails);
 	printf(fails ? "SOME FAILED\n" : "ALL PASSED\n");

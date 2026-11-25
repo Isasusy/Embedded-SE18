@@ -19,7 +19,7 @@ typedef struct {
 	int pool_peak;
 	int connects_ok, connect_calls, isconn_errs, tcp_fails;
 	int console_lines, console_connect_failed;
-	struct { const char *name; int pub_ok, pub_err_req, pub_err_ring, pub_err_conn, delivered; char last[512]; } t[NTOPIC];
+	struct { const char *name; int pub_ok, pub_err_req, pub_err_ring, pub_err_conn, delivered; char last[768]; } t[NTOPIC];
 	int hb_last_seq, hb_gaps; uint32_t hb_last_t, hb_max_gap_ms;	/* delivered robot/se18/heartbeat */
 	uint32_t status_max_age_ms;					/* deliver time - status timestamp */
 	int vc_sent, vc_dropped;

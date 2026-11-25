@@ -21,7 +21,7 @@
 #define VC_CRUISE_SPEED		150		/* mm/s, normal line following            */
 #endif
 #define VC_HUMP_SPEED		90		/* mm/s while the IMU measures a hump     */
-#define VC_RECOVER_SPEED	60		/* mm/s while searching for a lost line   */
+#define VC_RECOVER_SPEED	90		/* mm/s while searching for a lost line   */
 #define VC_TURN_ANGLE		90		/* degrees for a LEFT / RIGHT barcode     */
 #define VC_JUNCTION_ADVANCE_MM	60		/* after the sensors see a junction, drive this far (axle to the junction centre) before turning (CALIBRATE) */
 #define VC_JUNCTION_PAUSE_MS	1000		/* at a junction: stop this long before acting on the barcode */
@@ -44,7 +44,7 @@
 #define VC_ALIVE_MS		100		/* NFR10: a task silent longer than this = fault */
 #define VC_RECOVER_TIMEOUT_MS	4000
 #define VC_HUMP_TIMEOUT_MS	6000
-#define VC_SCAN_TIMEOUT_MS	9000
+#define VC_SCAN_TIMEOUT_MS	15000		/* wait this long for a profile sweep. */
 #define VC_STATUS_MS		500		/* NFR5: telemetry at 2 Hz */
 #define VC_SETTLE_TICKS		2		/* ignore cmd_done this long after sending a manoeuvre */
 
@@ -60,10 +60,16 @@
 
 /* ---- obstacle bypass geometry (CALIBRATE on the robot) ---- */
 #define VC_ROBOT_HALF_W_MM	100		/* half the car's width */
-#define VC_ROBOT_LEN_MM		180		/* the car's length, front to back (rear overhang = this - VC_SENSOR_AHEAD_MM) */
+#define VC_ROBOT_LEN_MM		200		/* the car's length, front to back (rear overhang = this - VC_SENSOR_AHEAD_MM) */
 #define VC_SENSOR_AHEAD_MM	70		/* wheel axle (turning centre) to the ultrasonic sensor at the front (CALIBRATE) */
 #define VC_AVOID_MAX_DEG	75		/* steepest avoidance turn */
 #define VC_REJOIN_EXTRA_MM	150		/* line finding: creep this much further than the way back before giving up */
+/* no way round (no usable side, or no profile within VC_SCAN_TIMEOUT_MS): reverse this far straight back and profile
+   it again, up to VC_OBST_RETRIES times per obstacle (stopped at 200 mm: profiles at ~200, ~250, ~300 mm). After that
+   the old behaviour: bench = watch and re-profile, mission = FAULT_OBSTACLE. */
+#define VC_OBST_RETRIES		2
+#define VC_OBST_RETRY_REVERSE_MM 80
+#define VC_OBST_REVERSE_SPEED	VC_RECOVER_SPEED	/* mm/s: backing up blind, so slowly */
 #define VC_MOVE_MAX_MM		500		/* a longer avoidance MOVE is sent in pieces, so each one finishes well within
 						   S2's MC_CMD_TIMEOUT_MS at VC_CRUISE_SPEED */
 
@@ -74,7 +80,7 @@
 /* ---- bench start: no MQTT needed ----
    0 = wait for a REMOTE_START (from S1/MQTT). N > 0 = start the mission by itself N ms after power-up, once,
    as soon as every subsystem reports READY. LIFT THE WHEELS OFF THE TABLE FIRST. Set 0 at integration. */
-#define VC_AUTOSTART_MS		5000
+#define VC_AUTOSTART_MS		0
 
 /* ---- start / stop button (Robo Pico GP20 or GP21) ----
    1 = the car waits in IDLE until a button is pressed and released, then starts VC_BUTTON_DELAY_MS later (hand clear).
@@ -120,26 +126,31 @@
 #define SCAN_TRACK_CLEAR_PINGS	4		/* after a hit the servo stays on the obstacle until this many clear pings in a row */
 #define SCAN_NEAR_MM		400		/* a ray shorter than this belongs to the obstacle */
 #define SCAN_SIDE_TIE_MM	30		/* sides this close in free space count as equal: take the shorter detour */
-#define SCAN_BEAM_HALF_DEG	15		/* HC-SR04 beam half-width: each edge is pulled in by this.
+#define SCAN_BEAM_HALF_DEG	15	/* HC-SR04 beam half-width: each edge is pulled in by this.
 						   The route is planned on the corrected width.
 						   CALIBRATE: profile a box of known width; raise this if it reads too wide */
 #ifndef SCAN_PLAN_WIDTH_PCT
 #define SCAN_PLAN_WIDTH_PCT	150		/* the route is planned round an obstacle this % of the beam-corrected width,
 						   centred on it, with the same depth */
 #endif
-#define SCAN_SIDE_MARGIN_MM	40		/* gap between the car's side and the planned obstacle while passing it */
+#define SCAN_SIDE_MARGIN_MM	50		/* gap between the car's side and the planned obstacle while passing it */
 #define SCAN_DEPTH_MIN_MM	80		/* planned depth (= planned width) is clamped to this range */
 #define SCAN_DEPTH_MAX_MM	400
 /* PROFILE sweep (after the car has stopped for an obstacle). Angles are ABSOLUTE servo degrees, SCAN_SERVO_CENTRE_DEG
-   = straight ahead, so 30..150 is 60 degrees either side. Below the centre = the robot's right, above = its left. */
+   = straight ahead, so 15..165 is 75 degrees either side. Below the centre = the robot's right, above = its left.
+   Was 30..150 (+-60). The rays near +-75 point almost sideways: they show walls beside the car (free space per side). */
 #define SCAN_SERVO_CENTRE_DEG	90
-#define SCAN_PROFILE_START_DEG	30
-#define SCAN_PROFILE_END_DEG	150
-#define SCAN_PROFILE_STEP_DEG	5		/* 30, 35, ... 150 = 25 pings */
+#define SCAN_PROFILE_START_DEG	15
+#define SCAN_PROFILE_END_DEG	165
+#define SCAN_PROFILE_STEP_DEG	5		/* 15, 20, ... 165 = 31 pings (OBST_PROFILE_MAX_RAYS) */
 #define SCAN_GLIDE_MS_PER_DEG	8		/* smooth servo moves: 1 degree every this many ms (125 deg/s) */
 #define SCAN_SETTLE_MS		40		/* after the glide reaches an angle, wait this long before pinging */
-#define SERVO_US_MIN		500		/* SG90 pulse widths */
+#define SERVO_US_MIN		500		/* SG90 pulse widths for -90 .. +90 servo degrees */
 #define SERVO_US_MAX		2500
+#define SERVO_DEG_LIMIT		100		/* the servo may be commanded this far either side (after SERVO_TRIM_DEG), on
+						   the same us-per-degree scale beyond +-90: 100 deg = 389 / 2611 us. Needed for
+						   the +-75 sweep with the -25 trim (servo -100 .. +50). CHECK on the robot that
+						   the sensor really turns to -75 (servo 15) and does not buzz against its stop */
 #define SERVO_TRIM_DEG		(-25)		/* adjust if "straight ahead" is not 0 (+ = turn left / anticlockwise, - = right / clockwise) */
 #define SERVO_REVERSE		0		/* 1 = swap left and right if + turns the sensor to the robot's right */
 #define S5_SERVO_TEST		0		/* 1 = at power-up sweep the servo -60..+60..0 and print the distance at each angle,

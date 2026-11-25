@@ -87,7 +87,7 @@ EXPORT void s1_service(s1_publish_fn publish, void *ctx, uint32_t now_ms)
 		}
 	}
 	static unsigned bc_seen, ob_seen, hump_seen;
-	static char buf[512];			/* static: the obstacle JSON is too big for the WiFi task's stack */
+	static char buf[768];			/* static: the obstacle JSON (up to ~521 bytes) is too big for the WiFi task's stack */
 
 	/* A status lwIP refuses (all MQTT requests still waiting for a TCP ACK) is kept and sent on the next call. */
 	static robot_status_t st_pend;

@@ -1,6 +1,6 @@
 /*
  * fake_net.c -- PC model of what mqtt_utk.c / subsystem1.c sit on: lwIP's MQTT client (apps/mqtt/mqtt.c, lwIP 2.x
- * defaults MQTT_REQ_MAX_IN_FLIGHT 4, MQTT_OUTPUT_RINGBUF_SIZE 512 (SE18 lwipopts.h), MQTT_CYCLIC_TIMER_INTERVAL 5 s, MQTT_REQ_TIMEOUT 30 s,
+ * defaults MQTT_REQ_MAX_IN_FLIGHT 4, MQTT_OUTPUT_RINGBUF_SIZE 768 (SE18 lwipopts.h), MQTT_CYCLIC_TIMER_INTERVAL 5 s, MQTT_REQ_TIMEOUT 30 s,
  * keep-alive watchdog 1.5 x keep_alive, no automatic reconnect), lwIP's sys_timeout pool, TCP to a broker with a given
  * round-trip time, a broker, and micro T-Kernel message buffers. Behaviour copied from lwIP, not lwIP's code.
  */
@@ -122,14 +122,14 @@ struct mqtt_client_s {
 	mqtt_incoming_publish_cb_t pub_cb; mqtt_incoming_data_cb_t data_cb; void *in_arg;
 	struct { int used; u16_t id; uint32_t t; mqtt_request_cb_t cb; void *arg; char topic[64]; } req[4];
 	u16_t next_id; u16_t keep_alive; uint32_t last_rx, t_connect;
-	int ring, unacked;			/* bytes in the 512-byte output ring / sent but not ACKed (TCP_SND_BUF 11680) */
+	int ring, unacked;			/* bytes in the 768-byte output ring / sent but not ACKed (TCP_SND_BUF 11680) */
 	char subs[4][64]; int nsubs;		/* broker side: this client's subscriptions (clean session) */
 	int syn_idx;
 };
 static mqtt_client_t *the_client;
 
 enum { EV_TCP_UP, EV_SYN_RETRY, EV_TCP_FAIL, EV_CONNACK, EV_ACK, EV_SUBACK, EV_PEER_CLOSE, EV_DELIVER, EV_INBOUND };
-typedef struct { int used; uint32_t due, seq; int type, epoch, a; char topic[64]; char data[512]; int len, frag; } ev_t;
+typedef struct { int used; uint32_t due, seq; int type, epoch, a; char topic[64]; char data[768]; int len, frag; } ev_t;
 static ev_t ev[512]; static uint32_t eseq;
 static void post(uint32_t delay, int type, int epoch, int a, const char *topic, const void *data, int len, int frag)
 {
@@ -187,7 +187,7 @@ err_t mqtt_client_connect(mqtt_client_t *c, const void *ip, u16_t port, mqtt_con
 static int out_space(mqtt_client_t *c, int remaining)
 {
 	int total = 1 + (remaining > 127 ? 2 : 1) + remaining;
-	if (c->ring + total > 512) return 0;
+	if (c->ring + total > 768) return 0;
 	c->ring += total;
 	int room = 11680 - c->unacked, mv = c->ring < room ? c->ring : room;	/* mqtt_output_send: tcp_write(COPY) */
 	c->ring -= mv; c->unacked += mv;
@@ -231,7 +231,7 @@ static void deliver(ev_t *e)
 {
 	int ti = sim_topic(e->topic);
 	SIM.t[ti].delivered++;
-	e->data[e->len < 511 ? e->len : 511] = 0;
+	e->data[e->len < (int)sizeof e->data - 1 ? e->len : (int)sizeof e->data - 1] = 0;
 	snprintf(SIM.t[ti].last, sizeof SIM.t[ti].last, "%s", e->data);
 	if (ti == 1) {				/* robot/se18/heartbeat: {"hb":N,"t":T} */
 		int seq = 0; sscanf(e->data, "{\"hb\":%d", &seq);

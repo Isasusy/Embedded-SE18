@@ -105,6 +105,7 @@ static void obstacle_stop(vc_t *v, vc_out_t *o, const vc_in_t *in, uint32_t now)
 	cmd(o, MOTION_CMD_STOP, 0, 0, 0);
 	enter(v, o, VC_OBSTACLE_AVOID, now);
 	confirm_start(v, in->obstacle_mm, now);
+	v->ob_retries = 0;				/* a new obstacle: VC_OBST_RETRIES reverse-and-re-profile tries */
 }
 
 /* a still object keeps its distance; one that moves more than VC_OBST_STILL_TOL_MM restarts the wait */
@@ -120,9 +121,23 @@ static void still_track(vc_t *v, int mm, uint32_t now)
 	}
 }
 
-/* no usable side (or no profile): bench = watch it again and re-profile; mission = fault */
+/* No usable side, or no profile in VC_SCAN_TIMEOUT_MS. The first VC_OBST_RETRIES times for this obstacle: back away
+   VC_OBST_RETRY_REVERSE_MM straight back, heading held, at VC_OBST_REVERSE_SPEED (OB_REVERSE), then PROFILE it again
+   from there: further back, the sweep sees more of the space beside it and a steeper avoidance turn is not needed.
+   After that: bench = watch it again and re-profile; mission = fault. ob_retries restarts at each new obstacle stop. */
+_Static_assert(VC_OBST_RETRY_REVERSE_MM > 0 && 1000 * VC_OBST_RETRY_REVERSE_MM / VC_OBST_REVERSE_SPEED + 1500 < 8000,
+	       "the reverse must finish well within S2's MC_CMD_TIMEOUT_MS (8000) at VC_OBST_REVERSE_SPEED");
+
 static void no_way(vc_t *v, vc_out_t *o, const vc_in_t *in, uint32_t now)
 {
+	if (v->ob_retries < VC_OBST_RETRIES) {
+		v->ob_retries++;
+		cmd(o, MOTION_CMD_MOVE, VC_OBST_REVERSE_SPEED, 0, -VC_OBST_RETRY_REVERSE_MM);
+		v->settle = VC_SETTLE_TICKS;
+		v->sub = OB_REVERSE;
+		v->t_sub = now;
+		return;
+	}
 #if VC_BENCH_LINE_ONLY
 	(void)o;
 	confirm_start(v, in->obstacle_mm, now);
@@ -353,6 +368,13 @@ void vc_step(vc_t *v, const vc_in_t *in, vc_out_t *o)
 			} else if (now - v->t_sub > VC_SCAN_TIMEOUT_MS) {
 				no_way(v, o, in, now);
 			}
+		} else if (v->sub == OB_REVERSE) {		/* NO WAY ROUND YET: backing away, then profile it again */
+			if (v->settle > 0) { v->settle--; break; }
+			if (in->motion_done) {
+				o->scan_request = true;
+				v->sub = OB_PROFILE;
+				v->t_sub = now;
+			}
 		} else if (v->sub == OB_BYPASS) {		/* AVOID, then turn toward the line: one step at a time */
 			if (in->line && in->line->type == LINE_EVT_FOUND && v->step >= 4)
 				v->sp_line_found = true;	/* found while turning toward it */
@@ -404,7 +426,8 @@ void vc_step(vc_t *v, const vc_in_t *in, vc_out_t *o)
 
 status:
 	/* stopped for an obstacle (watching it or profiling it): the scan task tracks it with the hold distance */
-	o->scan_hold = v->state == VC_OBSTACLE_AVOID && (v->sub == OB_CONFIRM || v->sub == OB_PROFILE || v->sub == OB_HOLD);
+	o->scan_hold = v->state == VC_OBSTACLE_AVOID && (v->sub == OB_CONFIRM || v->sub == OB_PROFILE || v->sub == OB_HOLD ||
+							 v->sub == OB_REVERSE);	/* keep tracking it while backing off */
 	if (now - v->t_last_status >= VC_STATUS_MS) {
 		v->t_last_status = now;
 		o->send_status = true;

@@ -87,7 +87,8 @@ typedef struct {
    Shared memory, not a message buffer (S1 runs inside the WiFi task on the other core and must never block):
    scan_task.c writes s5_profile under the sequence counter s5_profile_seq (odd while writing), S1 copies it and
    keeps the copy only if the counter was even and unchanged across the copy. */
-#define OBST_PROFILE_MAX_RAYS	25	/* 30..150 in 5 deg steps; the JSON must fit lwIP's MQTT output buffer (512 bytes, lwipopts.h) */
+#define OBST_PROFILE_MAX_RAYS	31	/* 15..165 in 5 deg steps; the JSON (worst case ~521 bytes) must fit S1's buffer and
+					   lwIP's MQTT output ring (768 bytes each, lwipopts.h). At most SCAN_MAX_RAYS (32) */
 typedef struct {
 	int32_t		n;				/* rays used */
 	int16_t		servo_deg[OBST_PROFILE_MAX_RAYS];	/* absolute servo angle, 90 = straight ahead */
