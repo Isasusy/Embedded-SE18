@@ -16,27 +16,37 @@
  */
 
 #include "lwip/apps/mqtt.h"
+#include "lwip/apps/mqtt_priv.h"	/* client->conn, for the stall detector */
+#include "lwip/altcp.h"			/* altcp_abort() */
 #include "lwip/ip_addr.h"
-#include "lwip/sys.h"		/* SE18: sys_now() for s1_service() */
+#include "lwip/sys.h"		/* sys_now() for s1_service() */
 #include "lwip/timeouts.h"
 #include "wifi_secrets.h"
 #include "mqtt_utk.h"
 #include <tm/tmonitor.h>
 
-/* ---- SE18 telemetry hooks (app_program/subsystem1). Changed lines are marked SE18. ----
+/* ----telemetry hooks (app_program/subsystem1). ----
  * The robot's telemetry code runs HERE, inside this WiFi service task, through two hooks:
  *   s1_service()  every 100 ms while connected: publishes status / heartbeat / barcode reads
  *   s1_rx()       for every message on S1_CMD_TOPIC: START / STOP / RESET for the robot
  * Declared by hand (not via subsystem1.h) to keep tk/tkernel.h out of this file, as explained above. */
-typedef int (*s1_publish_fn)(void *ctx, const char *topic, const char *payload, int len);	/* SE18 */
-extern void s1_service(s1_publish_fn publish, void *ctx, u32_t now_ms);			/* SE18 */
-extern void s1_rx(const char *topic, const char *payload, int len);				/* SE18 */
-#define S1_CMD_TOPIC		"robot/se18/cmd"						/* SE18 */
-#define S1_SERVICE_MS		100								/* SE18 */
+typedef int (*s1_publish_fn)(void *ctx, const char *topic, const char *payload, int len);
+extern void s1_service(s1_publish_fn publish, void *ctx, u32_t now_ms);	
+extern void s1_rx(const char *topic, const char *payload, int len);	
+#define S1_CMD_TOPIC		"robot/se18/cmd"
+#define S1_SERVICE_MS		100	
 
 #define MQTT_UTK_HEARTBEAT_MS   5000
-#define MQTT_UTK_KEEPALIVE_S    60
+#define MQTT_UTK_KEEPALIVE_S    30	/*mqtt.c drops a silent broker after 1.5 x this, a
+					   backup only: the stall detector below aborts a stuck connection after 20 s */
 #define MQTT_UTK_RETRY_MS       3000
+
+/*  : stall detector. While connected, the heartbeat alone sends something every 5 s, and the broker's TCP ACK of
+ * it (or any message from the broker) proves the link works. If nothing has been acknowledged or received for this
+ * long, the connection is stuck (TCP resends backing off to a minute or more after a WiFi drop): abort it and
+ * reconnect, instead of waiting for TCP or the keepalive to give up. */
+#define MQTT_UTK_STALL_MS       20000
+static u32_t		last_ack_ms;	/*  : last ACK of our data, or message from the broker */
 
 /* Inbound message staging. A publish arrives as one topic callback followed by
  * one or more data callbacks, so the topic has to be kept until the fragment
@@ -57,26 +67,42 @@ static u8_t		rx_truncated;
 
 static void heartbeat_timeout(void *arg);
 
-/* SE18: publish for the telemetry code; 0 = queued, -1 = not (buffer full / offline: it simply tries later) */
+/* a QoS 0 publish "completes" when TCP has had its data acknowledged */
+static void pub_acked(void *arg, err_t result)
+{
+	(void)arg;
+	if(result == ERR_OK) last_ack_ms = sys_now();
+}
+
+/* publish for the telemetry code; 0 = queued, -1 = not (buffer full / offline: it simply tries later) */
 static int s1_pub(void *ctx, const char *topic, const char *payload, int len)
 {
 	(void)ctx;
 	if(client == NULL || !mqtt_client_is_connected(client)) return -1;
 	return mqtt_publish(client, topic, payload, (u16_t)len, 0 /* qos */, 0 /* retain */,
-			    NULL, NULL) == ERR_OK? 0: -1;
+			    pub_acked, NULL) == ERR_OK? 0: -1;
 }
 
-/* SE18: the telemetry service, every S1_SERVICE_MS while connected */
+/* the telemetry service, every S1_SERVICE_MS while connected; also the stall detector */
 static void s1_timeout(void *arg)
 {
 	(void)arg;
 	if(client != NULL && mqtt_client_is_connected(client)) {
-		s1_service(s1_pub, NULL, sys_now());
+		u32_t now = sys_now();
+		if((u32_t)(now - last_ack_ms) > MQTT_UTK_STALL_MS && client->conn != NULL) {
+			tm_printf((UB*)"mqtt: nothing acknowledged for %d s - dropping the connection, reconnecting\n",
+				  MQTT_UTK_STALL_MS / 1000);
+			last_ack_ms = now;
+			/* the TCP error callback closes the client and calls connection_cb(), which arms the retry */
+			altcp_abort(client->conn);
+		} else {
+			s1_service(s1_pub, NULL, now);
+		}
 	}
 	sys_timeout(S1_SERVICE_MS, s1_timeout, NULL);
 }
 
-static int same_topic(const char *a, const char *b)	/* SE18 */
+static int same_topic(const char *a, const char *b)	/*   */
 {
 	while(*a && *a == *b) { a++; b++; }
 	return *a == *b;
@@ -105,6 +131,7 @@ static void incoming_data_cb(void *arg, const u8_t *data, u16_t len, u8_t flags)
 	u16_t	i;
 
 	(void)arg;
+	last_ack_ms = sys_now();
 
 	for(i = 0; i < len; i++) {
 		if(rx_len < (MQTT_UTK_RX_DATA_MAX - 1)) {
@@ -121,7 +148,7 @@ static void incoming_data_cb(void *arg, const u8_t *data, u16_t len, u8_t flags)
 		rx_data[rx_len] = '\0';
 		tm_printf((UB*)"mqtt: RX [%s] \"%s\"%s\n", rx_topic, rx_data,
 			  rx_truncated? " (truncated)": "");
-		if(same_topic(rx_topic, S1_CMD_TOPIC)) {		/* SE18: a command for the robot */
+		if(same_topic(rx_topic, S1_CMD_TOPIC)) {
 			s1_rx(rx_topic, (const char *)rx_data, (int)rx_len);
 		}
 	}
@@ -142,6 +169,8 @@ static void publish_done_cb(void *arg, err_t result)
 	(void)arg;
 	if(result != ERR_OK) {
 		tm_printf((UB*)"mqtt: publish failed, err=%d\n", (int)result);
+	} else {
+		last_ack_ms = sys_now();
 	}
 }
 
@@ -187,6 +216,7 @@ static void connection_cb(mqtt_client_t *c, void *arg, mqtt_connection_status_t 
 		 * is allowed to reconnect. Leaving it set would wedge the client
 		 * permanently after the first disconnect. */
 		connecting = 0;
+		last_ack_ms = sys_now();	/* stall detector starts fresh */
 
 		tm_printf((UB*)"mqtt: connected to " MQTT_BROKER_IP "\n");
 
@@ -206,7 +236,7 @@ static void connection_cb(mqtt_client_t *c, void *arg, mqtt_connection_status_t 
 				  (int)err);
 		}
 
-		/* SE18: robot commands, and the telemetry service chain */
+		/*robot commands, and the telemetry service chain */
 		err = mqtt_subscribe(client, S1_CMD_TOPIC, 0 /* qos */,
 				     subscribe_done_cb, NULL);
 		if(err != ERR_OK) {
@@ -226,13 +256,13 @@ static void connection_cb(mqtt_client_t *c, void *arg, mqtt_connection_status_t 
 		/* lwIP's MQTT client never reconnects by itself (refused, failed
 		 * or dropped alike), so retry here, on a delay so a broker that
 		 * keeps rejecting can't turn this into a tight loop.
-		 * SE18: set the guard so the poll loop's mqtt_utk_start() does not
+		 *  : set the guard so the poll loop's mqtt_utk_start() does not
 		 * start its own attempt next to this timer's (ERR_ISCONN console
 		 * flood, two retry chains in the MEMP_SYS_TIMEOUT pool). */
 		tm_printf((UB*)"mqtt: connection status %d, retrying in %ds\n",
 			  (int)status, MQTT_UTK_RETRY_MS / 1000);
-		connecting = 1;						/* SE18 */
-		sys_untimeout(retry_timeout, NULL);			/* SE18 */
+		connecting = 1;	
+		sys_untimeout(retry_timeout, NULL);	
 		sys_timeout(MQTT_UTK_RETRY_MS, retry_timeout, NULL);
 	}
 }

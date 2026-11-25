@@ -91,7 +91,11 @@
 
 #define LWIP_DEBUG                  0
 
-/* SE18: the obstacle profile JSON (25 rays) is up to ~330 bytes; lwIP's default 256-byte MQTT output ring cannot hold it. */
+/* the obstacle profile JSON (25 rays) is up to ~330 bytes; lwIP's default 256-byte MQTT output ring cannot hold it. */
 #define MQTT_OUTPUT_RINGBUF_SIZE    512
 
-#endif /* LWIP_LWIPOPTS_H */
+/* every publish, QoS 0 too, holds one request slot until TCP has its data acknowledged. lwIP's default 4
+ * filled up whenever ACKs came a little late, and every publish after that failed until they arrived. */
+#define MQTT_REQ_MAX_IN_FLIGHT      16
+
+#endif

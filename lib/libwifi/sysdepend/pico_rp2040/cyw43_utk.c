@@ -294,6 +294,12 @@ void cyw43_utk_task(int32_t stacd, void *exinf)
                 tm_printf((UB*)"wifi: link up, ip=%d.%d.%d.%d\n",
                           (int)(ip & 0xff), (int)((ip >> 8) & 0xff),
                           (int)((ip >> 16) & 0xff), (int)((ip >> 24) & 0xff));
+                /* SE18: no radio power saving. The driver's default (PM2) sleeps between beacons and holds
+                 * incoming TCP ACKs back by up to ~200 ms; with many small MQTT publishes the client's request
+                 * slots then fill and telemetry stalls. Set on every link-up, since a rejoin can reset it. */
+                if(cyw43_wifi_pm(&cyw43_state, CYW43_NONE_PM) != 0) {
+                    tm_printf((UB*)"wifi: could not turn power saving off\n");
+                }
             } else {
                 tm_printf((UB*)"wifi: link status -> %s (%d)\n",
                           link_status_str(radio_status.link_status),
