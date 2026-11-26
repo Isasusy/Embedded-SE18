@@ -23,7 +23,7 @@
 #define VC_HUMP_SPEED		90		/* mm/s while the IMU measures a hump     */
 #define VC_RECOVER_SPEED	90		/* mm/s while searching for a lost line   */
 #define VC_TURN_ANGLE		90		/* degrees for a LEFT / RIGHT barcode     */
-#define VC_JUNCTION_ADVANCE_MM	60		/* after the sensors see a junction, drive this far (axle to the junction centre) before turning (CALIBRATE) */
+#define VC_JUNCTION_ADVANCE_MM	140		/* after the sensors see a junction, drive this far (axle to the junction centre) before turning (CALIBRATE) */
 #define VC_JUNCTION_PAUSE_MS	1000		/* at a junction: stop this long before acting on the barcode */
 #define VC_JUNCTION_PAUSE_ALWAYS 1		/* 1 = also stop at junctions with no barcode waiting (shows that the junction
 						   was seen; then drives straight on). 0 = only when a barcode is waiting */
@@ -76,6 +76,17 @@
 /* ---- hardware watchdog (NFR10: 500 ms) ---- */
 #define VC_WATCHDOG_ENABLE	1		/* 1 at integration; 0 on the bench so a stand-alone S5 does not reset */
 #define VC_WATCHDOG_MS		500
+
+/* ---- WiFi hang recovery (NET=lwip builds only) ----
+   The CYW43 driver waits for its SPI DMA with no timeout, so the WiFi task can hang for good: on the robot (26 Nov) it
+   stuck in cyw43_wifi_set_up() ("bringing interface up ...") in 2 of 4 power-ups, and once later while driving.
+   If the WiFi task's poll counter has not moved for VC_WIFI_HANG_MS while the car is stopped (INIT / IDLE / FAULT),
+   the VC forces a watchdog reboot. At most VC_WIFI_HANG_REBOOTS in a row (counted in a watchdog scratch register,
+   cleared once WiFi has an IP), so a dead radio never boot-loops: after that the car runs without WiFi.
+   It never reboots while the car is moving. 0 = off. */
+#define VC_WIFI_HANG_REBOOT	1
+#define VC_WIFI_HANG_MS		10000
+#define VC_WIFI_HANG_REBOOTS	3
 
 /* ---- bench start: no MQTT needed ----
    0 = wait for a REMOTE_START (from S1/MQTT). N > 0 = start the mission by itself N ms after power-up, once,
