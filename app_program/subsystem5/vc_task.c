@@ -16,6 +16,15 @@
 #include "s5_port.h"
 #include "../subsystem2/motion_config.h"
 
+#if VC_WIFI_HANG_REBOOT && VC_WATCHDOG_ENABLE && defined(TM_NET_LWIP) && TM_NET_LWIP
+#define VC_WIFI_HANG_CHECK	1
+#else
+#define VC_WIFI_HANG_CHECK	0
+#endif
+#if VC_WIFI_HANG_CHECK
+#include "../../lib/libwifi/sysdepend/pico_rp2040/cyw43_utk.h"	/* cyw43_utk_get_status(): is the WiFi task alive */
+#endif
+
 _Static_assert(1000 * VC_MOVE_MAX_MM / VC_CRUISE_SPEED + 1500 < MC_CMD_TIMEOUT_MS,
 	       "VC_MOVE_MAX_MM must finish well within S2's MC_CMD_TIMEOUT_MS at VC_CRUISE_SPEED");
 
@@ -78,6 +87,13 @@ void vc_task(INT stacd, void *exinf)
 		unsigned why = s5_wdt_reason();
 		S5_PRINTF("[S5] restart reason: %s\n", (why & 1u) ? "WATCHDOG TIMEOUT (a task was silent too long)" :
 			  (why & 2u) ? "watchdog forced" : "power-on / reset button / new firmware");
+#if VC_WIFI_HANG_CHECK
+		if (why == 0u)
+			s5_wifi_tries_set(0);			/* power-on: SCRATCH0 is 0 anyway, but be sure */
+		else if (s5_wifi_tries() != 0)
+			S5_PRINTF("[S5] (that reboot was the WiFi hang recovery, try %u of %d)\n", s5_wifi_tries(),
+				  VC_WIFI_HANG_REBOOTS);
+#endif
 	}
 	s5_wdt_enable(VC_WATCHDOG_MS);	/* NFR10: Pico resets (motor pins fall low) if we stop feeding it */
 #endif
@@ -255,6 +271,35 @@ void vc_task(INT stacd, void *exinf)
 #if VC_WATCHDOG_ENABLE
 		if (out.feed_watchdog)
 			s5_wdt_feed(VC_WATCHDOG_MS);
+#endif
+#if VC_WIFI_HANG_CHECK
+		{	/* WiFi hang recovery (vc_config.h): the WiFi task's poll counter has stopped and the car is stopped */
+			static uint32_t wifi_polls, wifi_moved_ms;	/* wifi_moved_ms starts at 0: boot, so a hung start-up counts */
+			static bool wifi_gave_up;
+			T_CYW43_UTK_STATUS ws;
+			cyw43_utk_get_status(&ws);
+			if (ws.ip_addr != 0 && s5_wifi_tries() != 0)
+				s5_wifi_tries_set(0);				/* WiFi works: a later hang gets fresh tries */
+			if (ws.poll_count != wifi_polls) {
+				wifi_polls = ws.poll_count;
+				wifi_moved_ms = in.now_ms;
+			} else if ((uint32_t)(in.now_ms - wifi_moved_ms) >= VC_WIFI_HANG_MS &&
+				   (v.state == VC_INIT || v.state == VC_IDLE || v.state == VC_FAULT)) {
+				unsigned tries = s5_wifi_tries();
+				if (tries < VC_WIFI_HANG_REBOOTS) {
+					s5_wifi_tries_set(tries + 1);
+					S5_PRINTF("[S5] WiFi hung for %d s (%s): rebooting, try %u of %d\n", VC_WIFI_HANG_MS / 1000,
+						  ws.init_complete ? "stopped polling" : "stuck starting the radio",
+						  tries + 1, VC_WIFI_HANG_REBOOTS);
+					tk_dly_tsk(200);			/* let the console send the line */
+					s5_wdt_reboot();
+				} else if (!wifi_gave_up) {
+					wifi_gave_up = true;
+					S5_PRINTF("[S5] WiFi still hung after %d reboots: giving up, the car runs without WiFi "
+						  "(power it off and on to try again)\n", VC_WIFI_HANG_REBOOTS);
+				}
+			}
+		}
 #endif
 #if S5_DEBUG_PRINT
 		if ((int)v.state != last_state) {

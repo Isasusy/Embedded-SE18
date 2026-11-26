@@ -32,4 +32,14 @@ static inline void s5_wdt_enable(unsigned ms)
 	s5_wdt_feed(ms);
 	S5_WDT_REG(0x00) |= (1u << 30);			/* CTRL.ENABLE */
 }
+/* WATCHDOG.SCRATCH0: survives a watchdog reboot, cleared by power-on (SCRATCH4-7 belong to the boot ROM).
+   Counts the WiFi-hang reboots in a row; the magic in the top half tells it from junk. */
+#define S5_WIFI_TRIES_MAGIC	0x5E180000u
+static inline unsigned s5_wifi_tries(void)
+{
+	unsigned s = S5_WDT_REG(0x0C);
+	return (s & 0xFFFF0000u) == S5_WIFI_TRIES_MAGIC ? (s & 0xFFFFu) : 0u;
+}
+static inline void s5_wifi_tries_set(unsigned n) { S5_WDT_REG(0x0C) = S5_WIFI_TRIES_MAGIC | (n & 0xFFFFu); }
+static inline void s5_wdt_reboot(void) { S5_WDT_REG(0x00) |= (1u << 31); }	/* CTRL.TRIGGER: reboot now */
 #endif
